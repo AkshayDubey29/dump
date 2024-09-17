@@ -1,0 +1,76 @@
+User Stories for Documentation and Proof of Concept (Including Application User Perspective and Business Use Cases)
+User Story	Description	Acceptance Criteria
+1. Centralized Log Collection with DaemonSet	As an Observability Engineer, I want to deploy a Fluent Bit DaemonSet on all Kubernetes nodes to collect logs from all applications running on the node and forward them to Grafana Loki.	- Fluent Bit is deployed as a DaemonSet on all nodes.
+- Fluent Bit collects logs from all pods and forwards them to Grafana Loki.
+- Centralized log format and filtering are applied.
+- Logs are accessible in Grafana.
+2. Application Instrumentation with OpenTelemetry	As a DevOps Engineer, I want all Java, Python, and Go applications instrumented with OpenTelemetry SDK for logs, metrics, and traces, so that I can monitor performance and health.	- OpenTelemetry SDK is integrated into all services.
+- Logs, metrics, and traces are sent to the OpenTelemetry Collector.
+- Minimal changes for application developers.
+- Metrics and traces are visible in Prometheus and Jaeger.
+3. Rate Limiting and Throttling During Traffic	As an Observability Engineer, I want to configure rate limiting and adaptive sampling at Fluent Bit DaemonSet and OpenTelemetry Collector levels to prevent system overload during spikes.	- Rate limiting is implemented in Fluent Bit DaemonSet to prevent memory overload.
+- Adaptive sampling in OpenTelemetry Collector prioritizes critical metrics and traces during traffic spikes.
+- Non-critical logs, metrics, and traces are deprioritized or dropped.
+4. Canary Testing for Pod Scaling	As an SRE, I want to deploy canary pods during scaling events to verify that logs are forwarded correctly to Loki before scaling the entire service.	- Canary pods are deployed and logs from those pods are captured and forwarded to Grafana Loki.
+- Logs from canary pods are validated before full-scale deployment.
+- Alerts are triggered in Grafana if logs are missing.
+- Full-scale pod scaling proceeds only after validation.
+5. Unified Observability Dashboard in Grafana	As a Platform Engineer, I want a unified Grafana dashboard that displays logs, metrics, and traces from all services so that I can have a single view of system health and performance.	- Grafana dashboard integrates logs (Loki), metrics (Prometheus), and traces (Jaeger).
+- The dashboard allows filtering by service, error rates, latency, and trace IDs.
+- Dashboard is shared with teams.
+- Teams can set custom alerts based on data.
+6. CI/CD Integration for Observability Checks	As a DevOps Engineer, I want to ensure all services are instrumented with OpenTelemetry SDK and meet observability standards before deployment.	- CircleCI Gatekeeper check ensures OpenTelemetry SDK is present in every service.
+- Pipeline fails if observability requirements are not met.
+- Successful pipelines ensure logs, metrics, and traces are visible in Grafana, Prometheus, and Jaeger.
+- Application developers see logs of failed pipelines and issues.
+7. Log and Metric Retention and Archiving	As a Compliance Officer, I want to implement automated log and metric retention policies and archive logs to S3, so I can meet compliance requirements while managing storage costs.	- Logs older than the retention period are archived to S3.
+- Metrics are deleted or compressed after a defined retention window.
+- Retention policies are consistent across services.
+- Storage costs are reduced with effective retention management.
+8. Event Storm Detection and Management	As an Observability Engineer, I want to detect and mitigate event storms to prevent non-critical events from overwhelming the system, prioritizing critical events.	- Event storm detection is configured in OpenTelemetry Collector and Prometheus.
+- Non-critical events are throttled while critical events are prioritized.
+- Observability system remains performant during high-traffic periods.
+- Alerts are triggered and throttling is initiated during event storms.
+9. Monitoring and Incident Reporting for New Pods	As an SRE, I want to monitor and report incidents for new pods after deployment to ensure logs and metrics for new services are available immediately.	- Monitoring is set up to detect new pods after deployment.
+- Logs and metrics from new pods are available in Grafana Loki and Prometheus without delay.
+- Incidents are reported if logs/metrics are missing.
+- A summary report is generated post-deployment to monitor pod performance and behavior.
+10. Consistency Across Dev and Prod Environments	As an Observability Engineer, I want to ensure logging, metrics, and trace configurations are consistent across development and production environments to avoid production issues.	- Fluent Bit DaemonSet and OpenTelemetry Collector configurations are consistent across both dev and prod.
+- Pod startup logs are monitored in both environments.
+- Scaling events in production match behavior in development.
+- Discrepancies between environments are flagged and resolved before production deployment.
+User Stories from Application User and Business Use Case Perspective
+User Story	Description	Acceptance Criteria
+1. Application Developer Needs Log Insights	As an Application Developer, I want detailed access to the logs of my services to understand errors and optimize performance without configuring a logging agent per service.	- Logs are automatically collected by Fluent Bit DaemonSet without requiring manual configuration.
+- Logs are viewable in Grafana Loki with service names and timestamps.
+- Application developers can query and filter logs by error type, latency, or trace ID.
+- Logs are retained and accessible based on predefined retention policies (e.g., 30 days).
+2. Real-Time Monitoring of Key Metrics	As a Business Analyst, I want to monitor the performance of my application in real time by accessing key business metrics such as cart abandonment rates and response times.	- Prometheus collects key business metrics such as response time, user interactions, and cart abandonment.
+- Grafana dashboard displays these metrics in real time.
+- Alerts are triggered if any metric exceeds the defined threshold (e.g., cart abandonment rate > 5%).
+- Business teams can access and create custom dashboards for specific KPIs.
+3. Incident Response During High-Traffic Events	As a Support Engineer, I need quick access to logs and traces during high-traffic events to troubleshoot performance issues in real time and reduce downtime for users.	- Logs from high-traffic events are viewable in Grafana Loki.
+- Traces are accessible in Jaeger with detailed timing information to identify bottlenecks.
+- Rate limiting and adaptive sampling ensure that critical data (e.g., errors, latency) is prioritized.
+- Alerts are sent when thresholds for response time or error rates are breached.
+- Support engineers can pinpoint performance issues quickly and efficiently.
+4. Business Impact of Slow Page Load Times	As a Product Manager, I want to track the business impact of slow page load times and how it correlates to user abandonment, to improve product performance and increase revenue.	- Prometheus collects page load times and user abandonment metrics.
+- Grafana dashboard correlates slow page load times with increased user drop-offs.
+- Alerts are set up when page load time exceeds the 3-second threshold.
+- Weekly reports provide insights into how slow performance impacts user behavior and business KPIs, allowing teams to make data-driven improvements.
+5. Cost Management with Observability System	As a CFO or Financial Analyst, I want to track and manage the storage costs associated with logs and metrics retention to ensure the observability system remains cost-effective.	- Fluent Bit archives logs to S3 after the defined retention period to reduce storage costs.
+- A report is generated monthly showing observability system usage and costs.
+- Long-term log storage in S3 is optimized for cost by deleting or compressing older logs.
+- Metrics in Prometheus are retained for a limited time, ensuring high-priority metrics are kept longer while non-essential ones are deleted after use.
+6. Custom Dashboard for Business KPIs	As a Marketing Manager, I want to create a custom dashboard in Grafana to track conversion rates, user sign-ups, and other KPIs important to my team, with alerts for anomalies.	- A custom Grafana dashboard is created with relevant KPIs such as conversion rates and user sign-ups.
+- Alerts are triggered if conversion rates drop below a certain threshold.
+- The dashboard is accessible to the marketing team, and reports are generated monthly.
+- KPIs are updated in real time, allowing the team to monitor performance during campaigns and adjust strategies accordingly.
+7. Compliance and Regulatory Monitoring	As a Compliance Officer, I want to ensure that logs and metrics are archived according to regulatory requirements, including data anonymization and retention policies.	- Logs older than the retention period are archived to S3 with data anonymization applied.
+- Metrics are deleted or archived after the defined retention window.
+- Compliance policies for data retention and access are applied across all services.
+- A compliance report is generated quarterly, showing adherence to regulations such as GDPR, with any breaches flagged for review.
+8. Real-Time Tracking of User Behavior	As a Customer Experience Manager, I want to track real-time user behavior (e.g., clicks, navigation paths) across our application to identify trends and improve user engagement.	- Prometheus collects metrics on user interactions such as clicks, navigation paths, and time spent on different parts of the application.
+- Grafana dashboard displays real-time user behavior trends.
+- Alerts are triggered if user engagement drops significantly.
+- Weekly reports provide insights into user behavior patterns, helping teams optimize the user experience and improve engagement.
