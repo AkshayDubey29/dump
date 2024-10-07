@@ -1,0 +1,177 @@
+#!/bin/bash
+
+# Project name
+PROJECT_NAME="couVerse"
+
+# Base directory is the current directory (since you are in the couVerse GitHub repo)
+BASE_DIR="$PWD"
+
+# Backend services
+BACKEND_SERVICES=(
+  "auth-service"
+  "user-service"
+  "seller-service"
+  "inventory-service"
+  "cart-service"
+  "order-service"
+  "payment-service"
+  "logistics-service"
+  "recommendation-service"
+  "product-service"
+  "review-service"
+  "notification-service"
+  "chat-service"
+  "analytics-service"
+)
+
+# Frontend services
+FRONTEND_SERVICES=(
+  "web-app"
+  "vr-ar-client"
+)
+
+# Common directories
+COMMON_DIRS=(
+  "config"
+  "models"
+  "middleware"
+  "utils"
+)
+
+# Infrastructure directories
+INFRASTRUCTURE_DIRS=(
+  "k8s"
+  "terraform"
+  "ci-cd"
+)
+
+# Database directories
+DATABASE_DIRS=(
+  "mongodb"
+  "postgres"
+)
+
+# Docs directories
+DOCS_DIRS=(
+  "api-specs"
+  "architecture"
+  "developer-guides"
+)
+
+# Create backend structure
+echo "Creating backend structure..."
+mkdir -p "$BASE_DIR/backend"
+for service in "${BACKEND_SERVICES[@]}"; do
+  mkdir -p "$BASE_DIR/backend/$service/src/main/java/com/couverse/$service"
+  mkdir -p "$BASE_DIR/backend/$service/src/main/resources"
+  mkdir -p "$BASE_DIR/backend/$service/src/test/java/com/couverse/$service"
+
+  # Create build.gradle.kts for each service
+  cat > "$BASE_DIR/backend/$service/build.gradle.kts" <<EOL
+plugins {
+    kotlin("jvm") version "1.8.10"
+    id("org.springframework.boot") version "2.6.4"
+    id("io.spring.dependency-management") version "1.0.11.RELEASE"
+}
+
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+EOL
+done
+
+# Create frontend structure
+echo "Creating frontend structure..."
+mkdir -p "$BASE_DIR/frontend"
+for frontend in "${FRONTEND_SERVICES[@]}"; do
+  mkdir -p "$BASE_DIR/frontend/$frontend"
+done
+
+# Create common structure
+echo "Creating common structure..."
+mkdir -p "$BASE_DIR/common"
+for common_dir in "${COMMON_DIRS[@]}"; do
+  mkdir -p "$BASE_DIR/common/$common_dir"
+done
+
+# Create infrastructure structure
+echo "Creating infrastructure structure..."
+mkdir -p "$BASE_DIR/infrastructure"
+for infra_dir in "${INFRASTRUCTURE_DIRS[@]}"; do
+  mkdir -p "$BASE_DIR/infrastructure/$infra_dir"
+done
+
+# Create database structure
+echo "Creating database structure..."
+mkdir -p "$BASE_DIR/database"
+for db_dir in "${DATABASE_DIRS[@]}"; do
+  mkdir -p "$BASE_DIR/database/$db_dir"
+done
+
+# Create docs structure
+echo "Creating docs structure..."
+mkdir -p "$BASE_DIR/docs"
+for doc_dir in "${DOCS_DIRS[@]}"; do
+  mkdir -p "$BASE_DIR/docs/$doc_dir"
+done
+
+# Create settings.gradle.kts
+echo "Creating settings.gradle.kts..."
+cat > "$BASE_DIR/settings.gradle.kts" <<EOL
+rootProject.name = "$PROJECT_NAME"
+
+include(
+    ":backend:auth-service",
+    ":backend:user-service",
+    ":backend:seller-service",
+    ":backend:inventory-service",
+    ":backend:cart-service",
+    ":backend:order-service",
+    ":backend:payment-service",
+    ":backend:logistics-service",
+    ":backend:recommendation-service",
+    ":backend:product-service",
+    ":backend:review-service",
+    ":backend:notification-service",
+    ":backend:chat-service",
+    ":backend:analytics-service"
+)
+EOL
+
+# Create global build.gradle.kts
+echo "Creating global build.gradle.kts..."
+cat > "$BASE_DIR/build.gradle.kts" <<EOL
+plugins {
+    kotlin("jvm") version "1.8.10"
+    id("org.springframework.boot") version "2.6.4"
+    id("io.spring.dependency-management") version "1.0.11.RELEASE"
+}
+
+subprojects {
+    apply(plugin = "org.springframework.boot")
+    apply(plugin = "io.spring.dependency-management")
+
+    group = "com.couverse"
+    version = "1.0.0"
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        implementation("org.springframework.boot:spring-boot-starter")
+        testImplementation("org.springframework.boot:spring-boot-starter-test")
+    }
+}
+EOL
+
+# Initialize Git repository
+echo "Initializing Git repository..."
+git init
+
+echo "Project $PROJECT_NAME has been successfully created!"
