@@ -1,0 +1,33 @@
+FROM alpine:3.17
+
+# Use an alternative mirror to avoid SSL issues
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirror.clarkson.edu/g' /etc/apk/repositories
+
+# Update and install necessary packages
+RUN apk update --no-cache && \
+    apk add --no-cache wget gnupg tar ca-certificates && \
+    update-ca-certificates
+
+# Add MongoDB user and group
+RUN addgroup -S mongodb && adduser -S -G mongodb mongodb
+
+# Download and install MongoDB
+RUN wget --no-check-certificate -O mongo.tgz "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-2.6.12.tgz" && \
+    tar -xvf mongo.tgz -C /usr/local --strip-components=1 && \
+    rm -rf mongo.tgz
+
+# Set up MongoDB configuration and directories
+RUN touch /etc/mongod.conf && \
+    mkdir -p /var/lib/mongodb/data && \
+    chown -R mongodb:mongodb /var/lib/mongodb && \
+    chmod -R g+rw /var/lib/mongodb
+
+# Expose the default MongoDB port
+EXPOSE 27017
+
+# Switch to non-root user
+USER mongodb
+
+# Entry point for MongoDB
+ENTRYPOINT ["mongod"]
+CMD ["--config", "/etc/mongod.conf"]
