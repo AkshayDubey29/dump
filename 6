@@ -1,0 +1,42 @@
+# Use a more secure and compatible base image
+FROM alpine:latest
+
+# Set environment variables
+ENV MONGODB_VERSION=2.6.12 \
+    APP_DATA=/opt/app-root/src \
+    HOME=/var/lib/mongodb \
+    CONTAINER_SCRIPTS_PATH=/usr/share/container-scripts/mongodb
+
+# Install required dependencies
+RUN apk update --no-cache && \
+    apk add --no-cache wget gnupg tar ca-certificates
+
+# Add MongoDB user and group
+RUN addgroup -S mongodb && adduser -S -G mongodb mongodb
+
+# Download and install MongoDB
+RUN set -x && \
+    wget --no-check-certificate -O mongo.tgz "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-${MONGODB_VERSION}.tgz" && \
+    wget --no-check-certificate -O mongo.tgz.sig "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-${MONGODB_VERSION}.tgz.sig" && \
+    export GNUPGHOME="$(mktemp -d)" && \
+    gpg --batch --verify mongo.tgz.sig mongo.tgz && \
+    tar -xvf mongo.tgz -C /usr/local --strip-components=1 && \
+    rm -rf "$GNUPGHOME" mongo.tgz mongo.tgz.sig
+
+# Set up MongoDB configuration and directories
+RUN touch /etc/mongod.conf && \
+    mkdir -p ${HOME}/data && \
+    chown -R mongodb:mongodb ${HOME} ${APP_DATA} && \
+    chmod -R g+rw ${HOME} ${APP_DATA}
+
+# Expose the default MongoDB port
+EXPOSE 27017
+
+# Set working directory and switch to non-root user
+WORKDIR ${HOME}
+VOLUME ["${HOME}/data"]
+USER mongodb
+
+# Define the default entry point
+ENTRYPOINT ["mongod"]
+CMD ["--config", "/etc/mongod.conf"]
