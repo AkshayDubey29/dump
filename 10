@@ -1,0 +1,135 @@
+#!/bin/bash
+
+# Define the root of the project
+MONIFLUX_ROOT="MoniFlux"
+BACKEND_ROOT="$MONIFLUX_ROOT/backend"
+
+# Create the API directories if they don't already exist
+mkdir -p $BACKEND_ROOT/api/controllers
+mkdir -p $BACKEND_ROOT/api/routes
+mkdir -p $BACKEND_ROOT/api/models
+mkdir -p $BACKEND_ROOT/api/config
+
+# Create main.go file (entry point)
+cat <<EOL > $BACKEND_ROOT/main.go
+package main
+
+import (
+    "fmt"
+    "log"
+    "net/http"
+    "moniflux/api/routes"
+)
+
+func main() {
+    // Initialize routes
+    router := routes.InitializeRoutes()
+
+    // Start the server
+    fmt.Println("MoniFlux API server running on port 8080")
+    log.Fatal(http.ListenAndServe(":8080", router))
+}
+EOL
+
+# Create routes.go file
+cat <<EOL > $BACKEND_ROOT/api/routes/routes.go
+package routes
+
+import (
+    "github.com/gorilla/mux"
+    "moniflux/api/controllers"
+)
+
+// InitializeRoutes sets up the API routes
+func InitializeRoutes() *mux.Router {
+    router := mux.NewRouter()
+
+    // Define API endpoints
+    router.HandleFunc("/api/start-load", controllers.StartLoadTest).Methods("POST")
+    router.HandleFunc("/api/stop-load", controllers.StopLoadTest).Methods("POST")
+    router.HandleFunc("/api/status", controllers.CheckStatus).Methods("GET")
+
+    return router
+}
+EOL
+
+# Create controllers for load generation
+cat <<EOL > $BACKEND_ROOT/api/controllers/load_controller.go
+package controllers
+
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+// LoadTestRequest represents the request payload for starting/stopping a load test
+type LoadTestRequest struct {
+    LogType  string \`json:"logType"\`
+    LogSize  int    \`json:"logSize"\`
+    LogRate  int    \`json:"logRate"\`
+    Duration int    \`json:"duration"\`
+}
+
+// StartLoadTest handles the request to start load generation
+func StartLoadTest(w http.ResponseWriter, r *http.Request) {
+    var loadReq LoadTestRequest
+
+    // Parse the JSON body into the struct
+    err := json.NewDecoder(r.Body).Decode(&loadReq)
+    if err != nil {
+        http.Error(w, "Invalid request payload", http.StatusBadRequest)
+        return
+    }
+
+    // Logic to start load generation
+    fmt.Printf("Starting load test with log type: %s, size: %d KB, rate: %d lines/s for %d seconds\n", 
+        loadReq.LogType, loadReq.LogSize, loadReq.LogRate, loadReq.Duration)
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Load test started"))
+}
+
+// StopLoadTest handles the request to stop load generation
+func StopLoadTest(w http.ResponseWriter, r *http.Request) {
+    // Logic to stop the load generation
+    fmt.Println("Stopping load test")
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Load test stopped"))
+}
+
+// CheckStatus returns the status of the current load test
+func CheckStatus(w http.ResponseWriter, r *http.Request) {
+    // Logic to check the status of the load test
+    status := "Load test is running"
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(status))
+}
+EOL
+
+# Create config file for environment settings
+cat <<EOL > $BACKEND_ROOT/api/config/config.go
+package config
+
+import (
+    "os"
+)
+
+// GetEnv returns the value of an environment variable or a fallback
+func GetEnv(key, fallback string) string {
+    if value, ok := os.LookupEnv(key); ok {
+        return value
+    }
+    return fallback
+}
+EOL
+
+# Initialize go.mod for package management
+cd $BACKEND_ROOT
+go mod init moniflux
+
+# Install necessary packages
+go get -u github.com/gorilla/mux
+
+echo "Backend API structure for MoniFlux has been created successfully!"
