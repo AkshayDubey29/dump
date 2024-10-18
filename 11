@@ -1,0 +1,136 @@
+#!/bin/bash
+
+# Define the root of the project
+MONIFLUX_ROOT="MoniFlux"
+BACKEND_ROOT="$MONIFLUX_ROOT/backend"
+
+# Create the config and load-generator directories
+mkdir -p $BACKEND_ROOT/config
+mkdir -p $BACKEND_ROOT/load-generator
+
+# Create config.go for handling configuration settings
+cat <<EOL > $BACKEND_ROOT/config/config.go
+package config
+
+import (
+    "os"
+    "log"
+    "github.com/joho/godotenv"
+)
+
+// LoadConfig loads environment variables from the .env file
+func LoadConfig() {
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatalf("Error loading .env file")
+    }
+}
+
+// GetEnv returns the value of an environment variable or a default value
+func GetEnv(key, defaultValue string) string {
+    value, exists := os.LookupEnv(key)
+    if !exists {
+        return defaultValue
+    }
+    return value
+}
+EOL
+
+# Create a .env file with default configuration variables
+cat <<EOL > $BACKEND_ROOT/config/.env
+LOG_TYPE=catalina
+LOG_RATE=1000
+LOG_SIZE=2KB
+DURATION=60
+EOL
+
+# Create load_generator.go for generating logs, metrics, traces, and events
+cat <<EOL > $BACKEND_ROOT/load-generator/load_generator.go
+package loadgenerator
+
+import (
+    "fmt"
+    "time"
+    "log"
+)
+
+// LoadTestConfig holds the configuration for the load test
+type LoadTestConfig struct {
+    LogType  string
+    LogSize  int
+    LogRate  int
+    Duration int
+}
+
+// GenerateLogs generates logs at the specified rate and size
+func GenerateLogs(config LoadTestConfig) {
+    fmt.Printf("Generating logs: Type = %s, Rate = %d logs/sec, Size = %d KB, Duration = %d seconds\\n", 
+        config.LogType, config.LogRate, config.LogSize, config.Duration)
+
+    ticker := time.NewTicker(time.Second / time.Duration(config.LogRate))
+    done := make(chan bool)
+
+    go func() {
+        time.Sleep(time.Duration(config.Duration) * time.Second)
+        done <- true
+    }()
+
+    for {
+        select {
+        case <-done:
+            fmt.Println("Load test complete.")
+            ticker.Stop()
+            return
+        case <-ticker.C:
+            // Simulate log generation
+            log.Printf("Generated %s log of size %d KB", config.LogType, config.LogSize)
+        }
+    }
+}
+
+// GenerateMetrics generates sample metrics data
+func GenerateMetrics(config LoadTestConfig) {
+    fmt.Printf("Generating metrics at rate: %d metrics/sec for %d seconds\\n", 
+        config.LogRate, config.Duration)
+    // Metrics generation logic here
+}
+
+// GenerateTraces generates trace data
+func GenerateTraces(config LoadTestConfig) {
+    fmt.Printf("Generating traces at rate: %d traces/sec for %d seconds\\n", 
+        config.LogRate, config.Duration)
+    // Trace generation logic here
+}
+
+// GenerateEvents generates events data
+func GenerateEvents(config LoadTestConfig) {
+    fmt.Printf("Generating events at rate: %d events/sec for %d seconds\\n", 
+        config.LogRate, config.Duration)
+    // Events generation logic here
+}
+EOL
+
+# Create a test_load_generator.go for testing the load generator
+cat <<EOL > $BACKEND_ROOT/load-generator/test_load_generator.go
+package loadgenerator
+
+import "testing"
+
+// TestGenerateLogs is a basic test for log generation
+func TestGenerateLogs(t *testing.T) {
+    config := LoadTestConfig{
+        LogType:  "catalina",
+        LogSize:  2,
+        LogRate:  1000,
+        Duration: 5,
+    }
+
+    GenerateLogs(config)
+}
+EOL
+
+# Install godotenv for handling .env files
+cd $BACKEND_ROOT
+go get github.com/joho/godotenv
+
+echo "Backend config and load-generator structure for MoniFlux created successfully!"
