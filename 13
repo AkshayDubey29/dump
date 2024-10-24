@@ -1,0 +1,29 @@
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "query_string": {
+            "query": "(businessImpact: \"FC\") AND isDeleted: false AND _exists_:windowSize AND windowSize:10"
+          }
+        },
+        {
+          "range": {
+            "@timestamp": {
+              "gte": "now-24h/h",
+              "lte": "now"
+            }
+          }
+        },
+        {
+          "script": {
+            "script": {
+              "source": "def minute = doc['@timestamp'].value.minuteOfHour; return (minute % 2 == 0);",
+              "lang": "painless"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
