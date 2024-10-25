@@ -1,0 +1,183 @@
+Here’s a **full-fledged technical migration document** for the Coumon to CouWatch migration project, focusing on every minute detail with tabular data where necessary. This comprehensive document is designed to be a technically accurate and detailed guide for both technical teams and program managers (TPM) involved in the migration.
+
+---
+
+# **Technical Migration Plan: Coumon to CouWatch**
+
+## **1. Executive Summary**
+Coumon is the current alerting and monitoring tool in use, with over 98,420 rules and 3,163 subscribers relying on its alerts for production services. Coumon has reached its limitations in terms of scalability, maintainability, and performance, and it depends on outdated components like MongoDB 2.6.12 and Java 8. This migration plan will shift all alert rules, metrics, and configurations to CouWatch, a Grafana-based platform, to improve scalability, reduce system complexity, and enhance alerting performance.
+
+This document outlines a technical migration plan that will span **two quarters**. It covers:
+- The infrastructure setup of CouWatch.
+- The migration of metric-based and custom alerts.
+- Validation of subscribers and notification channels.
+- Risk mitigation strategies.
+- The role of the Technical Program Manager (TPM) in driving the migration.
+
+---
+
+## **2. Migration Overview**
+
+| **Item**                     | **Details**                                     |
+|------------------------------|-------------------------------------------------|
+| **Source System**             | Coumon (Legacy)                                 |
+| **Target System**             | CouWatch (Grafana-based)                        |
+| **Total Alert Rules**         | 98,420                                          |
+| **Metric-Based Alerts**       | 85,320                                          |
+| **Custom Alerts**             | 13,100                                          |
+| **Subscribers**               | 3,163                                           |
+| **Notification Methods**      | Slack, Email, On-Call                           |
+| **Dependencies**              | Grafana, Prometheus, AlertManager, Kubernetes   |
+| **Stakeholders**              | SRE, DevOps, Engineering, Subscribers           |
+| **TPM Involvement**           | High (responsible for cross-team coordination)  |
+
+---
+
+## **3. Current State Analysis (Coumon)**
+
+### **3.1 Alert Rules Breakdown**
+
+| **Rule Type**          | **Count**  | **Description**                                     |
+|------------------------|------------|-----------------------------------------------------|
+| **Metric-Based Rules**  | 85,320     | Rules tied to metrics that monitor production SLIs  |
+| **Custom Rules**        | 13,100     | Rules created manually by service teams             |
+| **Total Rules**         | 98,420     | Sum of all rules configured in Coumon               |
+
+**Key Dependencies**:
+- Coumon currently integrates with Grafana for metrics and visualization.
+- Custom alerts are managed per service, involving deep business logic.
+- Notifications are delivered via Slack, Email, and On-Call tools.
+
+### **3.2 Subscriber Details**
+Subscribers in Coumon include application owners, engineers, and SRE teams. The notifications serve critical production needs and include both real-time alerts and routine reports.
+
+| **Subscriber Type**     | **Count**  | **Alert Method**   |
+|-------------------------|------------|--------------------|
+| **On-Call Personnel**    | 1,573      | On-call tools      |
+| **Email Subscribers**    | 980        | Email              |
+| **Slack Subscribers**    | 610        | Slack channels     |
+| **Total Subscribers**    | 3,163      | Mixed (multiple modes per user) |
+
+---
+
+## **4. Migration Phases**
+
+### **4.1 Phase 1: Analysis and Planning (Weeks 1-3)**
+
+| **Task**                                      | **Description**                                                             | **Timeline**   | **Risk**  |
+|-----------------------------------------------|-----------------------------------------------------------------------------|----------------|-----------|
+| **Inventory Current Alerts**                  | Extract a detailed list of all 98,420 alert rules from Coumon.               | 2 weeks        | Low       |
+| **Classify Custom vs Metric-Based Alerts**     | Separate custom rules from metric-based rules for migration planning.        | 1 week         | Low       |
+| **Identify Service-Level Dependencies**        | Document all critical services with custom alert dependencies.               | 1 week         | Medium    |
+| **Subscriber Mapping**                        | Map the 3,163 subscribers to their respective rules and notification modes.  | 1 week         | Low       |
+| **Establish Validation Metrics**              | Define success metrics for testing alert functionality post-migration.       | 1 week         | Low       |
+
+- **Output**: 
+    - A fully categorized list of all alerts and subscribers.
+    - Service dependency map to identify critical services.
+    - Baseline success metrics to validate the migration.
+
+### **4.2 Phase 2: CouWatch Infrastructure Setup (Weeks 4-6)**
+
+| **Task**                                  | **Description**                                                                      | **Timeline**   | **Tools**             | **Risk**  |
+|-------------------------------------------|--------------------------------------------------------------------------------------|----------------|-----------------------|-----------|
+| **Grafana Installation**                  | Set up Grafana and CouWatch within the Kubernetes cluster.                           | 1 week         | Kubernetes, Helm      | Low       |
+| **Prometheus & AlertManager Integration** | Configure Prometheus as the data source and AlertManager for notifications.          | 1 week         | Prometheus, AlertMgr   | Medium    |
+| **Data Source Configuration**             | Link all existing data sources from Grafana to CouWatch, ensuring smooth transition. | 1 week         | Grafana Data Sources   | Medium    |
+| **Notification Setup**                    | Configure Slack, Email, and On-Call notification channels for CouWatch.              | 1 week         | Grafana, Prometheus    | Low       |
+
+- **Output**: 
+    - A fully operational CouWatch environment, integrated with data sources.
+    - Notification channels configured and ready for testing.
+
+### **4.3 Phase 3: Metric-Based Alerts Migration (Weeks 7-16)**
+
+| **Task**                                     | **Description**                                                                             | **Timeline**   | **Tools**               | **Risk**  |
+|----------------------------------------------|---------------------------------------------------------------------------------------------|----------------|-------------------------|-----------|
+| **Script Alert Extraction from Coumon**      | Create scripts to extract 85,320 metric-based alerts in batches from Coumon.                | 2 weeks        | Python, Coumon API       | Medium    |
+| **Automated Alert Insertion to CouWatch**    | Use Grafana and Prometheus API to insert extracted metric-based alerts into CouWatch.        | 3 weeks        | Grafana API, Prometheus  | High      |
+| **Batch Testing of Migrated Alerts**         | Test alert functionality after migrating each batch of rules. Validate alerts trigger correctly. | Ongoing        | Prometheus, Grafana      | High      |
+| **Live Testing in Production**               | Conduct live tests for alerts in production to ensure behavior matches Coumon configurations. | 1 week         | Grafana, AlertManager    | Medium    |
+
+- **Success Criteria**:
+    - 100% successful migration of metric-based alerts, with validated triggers.
+    - No disruption in live monitoring for any service during migration.
+
+### **4.4 Phase 4: Custom Rules Migration (Weeks 17-24)**
+
+| **Task**                                     | **Description**                                                                                 | **Timeline**   | **Tools**               | **Risk**  |
+|----------------------------------------------|-------------------------------------------------------------------------------------------------|----------------|-------------------------|-----------|
+| **Custom Rule Inventory & Classification**   | Work with service teams to document and classify 13,100 custom alert rules.                      | 2 weeks        | Manual, Coumon API       | High      |
+| **Manual Rule Configuration in CouWatch**    | Manually recreate each custom rule in CouWatch.                                                  | 5 weeks        | Grafana UI, Prometheus   | High      |
+| **Service-Specific Validation**              | Test custom alerts with each team to ensure correctness and accuracy of rule logic.              | Ongoing        | Prometheus, Grafana      | High      |
+| **Subscriber Notifications Testing**         | Ensure that notifications for custom alerts are correctly routed to all 3,163 subscribers.       | 1 week         | Grafana, Slack API       | Medium    |
+
+- **Success Criteria**:
+    - 100% migration of custom alerts with validation from service owners.
+    - Subscribers correctly receiving notifications as configured in CouWatch.
+
+---
+
+### **4.5 Phase 5: Subscriber Validation & Notification Testing (Weeks 25-26)**
+
+| **Task**                                     | **Description**                                                                                 | **Timeline**   | **Tools**               | **Risk**  |
+|----------------------------------------------|-------------------------------------------------------------------------------------------------|----------------|-------------------------|-----------|
+| **Complete Subscriber Mapping**              | Verify that all 3,163 subscribers are mapped to their respective alerts and notification modes.  | 1 week         | Coumon API, Grafana      | Low       |
+| **End-to-End Notification Testing**          | Perform end-to-end testing for Slack, Email, and On-Call notifications, ensuring timely delivery. | 1 week         | Grafana, Slack API       | Low       |
+| **Backup Systems**                           | Configure backup alerting mechanisms for any failures in the primary notification pipeline.      | Ongoing        | Prometheus, AlertManager | Low       |
+
+- **Output**: 
+    - 100% subscriber coverage and validation.
+    - All notifications tested and delivered successfully.
+
+---
+
+## **5. Challenges & Mitigation Strategies**
+
+| **Challenge**                              | **Description**                                                                                    | **Mitigation Strategy**                                      |
+|--------------------------------------------|----------------------------------------------------------------------------------------------------|-------------------------------------------------------------|
+| **High Complexity of Custom Rules**        | Custom rules may require extensive manual intervention to ensure correct migration.                | Manual rule testing with service teams,
+
+ prioritizing critical services first. |
+| **Subscriber Notification Accuracy**       | Ensuring all 3,163 subscribers receive accurate notifications across multiple channels (Slack/Email).| Perform repeated end-to-end notification tests before go-live. |
+| **System Downtime**                        | Potential downtime during migration, affecting live production monitoring.                         | Schedule migrations during off-peak hours, dual-run Coumon and CouWatch during migration phases. |
+
+---
+
+## **6. Performance Monitoring Post-Migration**
+
+### **Key Metrics** to monitor after migration:
+
+| **Metric**                    | **Target**                                  |
+|-------------------------------|---------------------------------------------|
+| **Alert Trigger Latency**      | 20% reduction in alert trigger latency      |
+| **Notification Delivery Time** | Consistent delivery time (< 5 seconds)      |
+| **System Load**                | CouWatch should handle 98,420 rules with <50% CPU usage |
+| **Subscriber Engagement**      | 100% delivery accuracy for all subscribers  |
+
+---
+
+## **7. Technical Program Manager (TPM) Responsibilities**
+
+| **Task**                                | **TPM Role**                                                                                 |
+|-----------------------------------------|----------------------------------------------------------------------------------------------|
+| **Cross-Team Coordination**             | Ensure collaboration between SRE, DevOps, Application Teams, and Subscribers.                |
+| **Timeline Management**                 | Track migration timelines and milestones, ensuring on-time delivery of each phase.            |
+| **Risk Management & Issue Escalation**  | Identify potential risks early and escalate issues to relevant technical teams.               |
+| **Stakeholder Communication**           | Provide regular status updates to stakeholders and teams impacted by the migration.           |
+| **Resource Allocation**                 | Ensure technical resources are properly allocated for custom rule migration and validation.   |
+
+---
+
+## **8. Success Metrics for Migration**
+
+| **Success Metric**                      | **Target**                                             |
+|-----------------------------------------|--------------------------------------------------------|
+| **Total Alerts Migrated**               | 100% of 98,420 alerts successfully migrated to CouWatch.|
+| **Custom Rule Validation**              | 100% of custom rules validated by service teams.        |
+| **Subscriber Notification Accuracy**    | 100% notification delivery success for 3,163 subscribers.|
+| **Performance Gains**                   | 20% improvement in alert trigger and notification latency.|
+
+---
+
+This document provides a **detailed, technical migration plan** for moving from Coumon to CouWatch. It highlights specific tasks, timelines, risks, and validation strategies, while also defining the role of the TPM to ensure smooth coordination and successful completion of this high-impact project.
