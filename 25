@@ -1,0 +1,39 @@
+# Stage 1: Pull the confd image
+FROM artifactory.coupang.net/oi/release/confd:latest as confd
+
+# Stage 2: Main image
+FROM artifactory.coupang.net/oi/release/ciabaseimage/fluent-bit:3.1.10
+
+# Copy necessary files
+COPY confd /etc/confd
+COPY docker-entrypoint.sh /bin/docker-entrypoint.sh
+COPY filters.lua /etc/fluent-bit/filters.lua
+RUN chmod 755 /bin/docker-entrypoint.sh
+
+# Enable package mirror
+RUN echo 'https://artifactory.coupang.net/artifactory/cgr-wolfi-alpine-remote' > /etc/apk/repositories
+
+# Install additional dependencies
+RUN apk update && apk add tzdata jq curl gdb bash coreutils libc6-compat
+
+# Copy confd binary from the confd image
+COPY --from=confd /bin/confd /usr/bin/confd
+
+# Set environment variables
+ENV TZ=KST-9
+ENV METRICS_ENABLED=true
+ENV FLUENT_BIT_LOG_LEVEL=trace
+
+# Configure core dump settings (enables core dumps in /core_dumps directory)
+RUN mkdir -p /core_dumps && \
+    echo '/core_dumps/core.%e.%p.%t' > /proc/sys/kernel/core_pattern && \
+    ulimit -c unlimited
+
+# Maintain backward compatibility for binary path change
+RUN mkdir -p /opt/fluent-bit/bin && ln -s /usr/bin/fluent-bit /opt/fluent-bit/bin/fluent-bit
+
+# Entry point for fluent-bit with debugging enabled
+ENTRYPOINT ["/bin/docker-entrypoint.sh"]
+
+# Command to start Fluent Bit with gdb attached for automatic backtrace on crash
+CMD ["/bin/bash", "-c", "while true; do gdb -ex run -ex 'set pagination off' -ex 'set logging on' -ex 'set logging file /core_dumps/gdb_output.log' -ex 'backtrace full' --args /usr/bin/fluent-bit -c /pang/log_forward/fluent-bit/fluent-bit.conf; sleep 5; done"]
