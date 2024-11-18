@@ -1,119 +1,111 @@
-Here’s an updated **ASCII diagram** representing the proposed architecture, considering **multi-cluster application deployments** and the **Kubernetes Operator running on one or two clusters with HA enabled**:
+### **Challenges in the Current Deployment Model**
 
-```
-                                     +------------------------------------------------+
-                                     |                Application Teams               |
-                                     |------------------------------------------------|
-                                     | - Define application configs in coupang_deployment |
-                                     | - Add Labels/Annotations (e.g., role, namespace)   |
-                                     +------------------------------------------------+
-                                                        |
-                                                        v
-       +--------------------------------+          +--------------------+
-       |       coupang_deployment       |          |     oe-operator     |
-       |     (GitHub Repository)        |          | (HA Enabled,        |
-       | - Application deployment files |--------> | Deployed in 1-2    |
-       | - JSONNET configs              |          | Central Clusters)  |
-       +--------------------------------+          +--------------------+
-                                                        |
-                                                        v
-                        +-----------------------------------------------+
-                        |           High Availability Operator          |
-                        |-----------------------------------------------|
-                        | - Watches CRD definitions                    |
-                        | - Reconciles desired state with actual state |
-                        | - Deploys OE containers                      |
-                        | - Runs with Leader Election for HA           |
-                        +-----------------------------------------------+
-                                                        |
-                              +-------------------------+-------------------------+
-                              |                                                 |
-                              v                                                 v
-       +-----------------------------------------------+       +-----------------------------------------------+
-       |         Kubernetes Central Cluster            |       |      Kubernetes Central Cluster (HA)         |
-       |-----------------------------------------------|       |-----------------------------------------------|
-       | - Runs the Kubernetes Operator                |       | - Acts as a failover for the Operator         |
-       | - Stores CRD configurations for OE containers |       | - Shares state with primary Operator          |
-       +-----------------------------------------------+       +-----------------------------------------------+
-                                                        |
-                                                        v
-                             +-------------------------------------------------------+
-                             |                   Multi-Cluster Applications          |
-                             |-------------------------------------------------------|
-                             | Cluster 1                                             |
-                             | +-------------------+  +---------------------------+  |
-                             | | Application Pods  |  | Deployed OE Containers    |  |
-                             | +-------------------+  | (e.g., Exporters, Agents) |  |
-                             | Cluster 2                                             |
-                             | +-------------------+  +---------------------------+  |
-                             | | Application Pods  |  | Deployed OE Containers    |  |
-                             | +-------------------+  | (e.g., Exporters, Agents) |  |
-                             | Cluster N                                             |
-                             | +-------------------+  +---------------------------+  |
-                             | | Application Pods  |  | Deployed OE Containers    |  |
-                             | +-------------------+  | (e.g., Exporters, Agents) |  |
-                             +-------------------------------------------------------+
-                                                        ^
-                                                        |
-                             +-------------------------+-------------------------+
-                             |                  Logs, Metrics, and Alerts       |
-                             |--------------------------------------------------|
-                             | - Observability data is forwarded to monitoring  |
-                             |   systems like Grafana, Prometheus, Splunk, etc. |
-                             +--------------------------------------------------+
-```
+The current deployment approach for OE (Observability Engineering) containers presents several operational challenges, especially during incidents like **INCIDENT-17594**, where reactive measures were inefficient and time-consuming. Below are detailed challenges faced in the current model:
 
 ---
 
-### **Details of the Updated Architecture**
+#### **1. Decentralized Control**
+- **Application Team's Autonomy Over Configurations:**
+  - Application teams currently manage OE container configurations as sidecars. This decentralized control allows teams to overwrite settings, resulting in:
+    - Inconsistent configurations across clusters and applications.
+    - Misconfigured OE containers, leading to failures or degraded observability.
+  - Example: During **INCIDENT-17594**, a misconfiguration in OE containers caused issues across multiple namespaces. Since the application teams were managing these configurations, identifying and resolving the root cause required significant manual intervention.
 
-#### **1. Multi-Cluster Application Deployments**
-- Applications are deployed across **multiple Kubernetes clusters (Cluster 1, Cluster 2, ..., Cluster N)**.
-- Each cluster runs application pods and the required OE containers (exporters, forwarders, agents).
-
-#### **2. Centralized Operator Deployment**
-- The Kubernetes Operator runs in **one or two central clusters** with **High Availability (HA)**:
-  - **HA Implementation**:
-    - Leader Election ensures only one instance of the Operator is actively managing configurations at any time.
-    - Failover mechanisms allow a secondary Operator to take over in case of failure.
-
-#### **3. Workflow**
-1. **Application Teams**:
-   - Use the **coupang_deployment** repository to define application configurations.
-   - Add Labels/Annotations (e.g., `role=prod`, `namespace=observability`) to specify deployment requirements.
-
-2. **Kubernetes Operator**:
-   - Watches CRDs in the central clusters.
-   - Manages OE container deployments across all clusters (e.g., Cluster 1, Cluster 2, Cluster N).
-   - Uses Labels/Annotations to determine where and how OE containers should be deployed.
-
-3. **Multi-Cluster Management**:
-   - The Operator in the central clusters uses **Kubernetes API aggregation** to manage deployments across multiple clusters.
-   - Deploys OE containers to target clusters based on Labels and Annotations.
-
-4. **Observability**:
-   - Deployed OE containers (e.g., exporters, forwarders, agents) in application clusters send logs, metrics, and traces to centralized monitoring systems like **Grafana**, **Prometheus**, or **Splunk**.
+- **Lack of Centralized Management:**
+  - No unified control mechanism for managing OE containers across clusters and namespaces.
+  - Changes to OE containers require coordination across multiple application teams, leading to delays and errors.
 
 ---
 
-### **Benefits of the Proposed HA Deployment**
-1. **High Availability**:
-   - Redundant Operators ensure continued operation in case of a failure.
-   - Leader Election avoids conflicts between multiple Operators.
+#### **2. Broad Reversions During Incidents**
+- **Global Rollbacks:**
+  - In incidents like **INCIDENT-17594**, changes to OE containers had to be reverted across **all roles and namespaces**, even though the issue was specific to certain applications.
+  - This resulted in:
+    - **Unnecessary downtime** or degradation for unaffected applications.
+    - Increased recovery time, as OE containers were reverted globally rather than targeting faulty applications.
 
-2. **Centralized Control**:
-   - Configuration and deployment logic are managed centrally in one or two clusters.
-   - Simplifies multi-cluster management.
-
-3. **Scalability**:
-   - Supports a large number of application clusters with consistent and automated deployments.
-
-4. **Fault Tolerance**:
-   - Failover mechanisms and Leader Election ensure reliability.
-
-5. **Observability**:
-   - Uniform observability setup across all clusters with minimal manual effort.
+- **Granularity Issues:**
+  - The current model lacks mechanisms to roll back changes for specific applications or namespaces. A global rollback impacts the stability and observability of healthy services.
 
 ---
 
-Let me know if you need further details or refinements!
+#### **3. Operational Overhead**
+- **Manual Troubleshooting:**
+  - During incidents, OE teams must manually identify faulty configurations across multiple namespaces and clusters.
+  - Application teams are often unaware of the impact of their changes on OE containers, further complicating troubleshooting.
+
+- **Delayed Incident Resolution:**
+  - Incident resolution requires coordination between the OE team and application teams, leading to delays in restoring normal operations.
+
+- **High Coordination Costs:**
+  - Each namespace or role may have different configurations, requiring the OE team to coordinate changes with multiple application teams.
+
+---
+
+#### **4. Difficulty in Version Management**
+- **Inconsistent Updates:**
+  - Application teams pull container images from the OE repositories but may not update to the latest versions, leading to version fragmentation.
+  - Example: An outdated `log-forwarder` container in one namespace could fail to send logs correctly, while other namespaces with updated versions work fine.
+
+- **Complicated Rollouts:**
+  - Rolling out new versions or fixes across all clusters and namespaces is cumbersome and prone to errors.
+  - Application teams may delay adopting updates, causing observability inconsistencies.
+
+---
+
+#### **5. Inefficient Change Control**
+- **Unrestricted Customization:**
+  - Application teams can customize OE container configurations without the OE team’s oversight, leading to:
+    - Resource mismanagement (e.g., oversized or undersized resource requests/limits).
+    - Unintended side effects, such as excessive logging causing Fluent Bit memory spikes.
+
+- **Lack of Policy Enforcement:**
+  - There is no centralized enforcement mechanism to ensure that all application teams adhere to OE team-defined standards.
+
+---
+
+#### **6. Scalability Challenges**
+- **Multi-Cluster Complexity:**
+  - Applications are deployed across multiple clusters, but OE container configurations are not centrally managed.
+  - This increases the risk of inconsistent observability setups across clusters, making it harder to scale observability infrastructure effectively.
+
+- **Scaling Incident Impact:**
+  - In a multi-cluster setup, incidents like **INCIDENT-17594** have a cascading effect, impacting observability in all clusters.
+
+---
+
+#### **7. Reactive Incident Management**
+- **Prolonged MTTR (Mean Time to Resolve):**
+  - Incident resolution often involves reverting to older configurations, which may require redeploying affected applications.
+  - Lack of targeted rollback capabilities leads to prolonged downtime.
+
+- **Incident Amplification:**
+  - A misconfigured OE container deployed globally can amplify the impact of an incident, as seen in **INCIDENT-17594**.
+
+---
+
+#### **8. Limited Observability of OE Containers**
+- **No Real-Time Monitoring of OE Deployments:**
+  - The OE team lacks tools to monitor the health and status of OE containers across clusters in real time.
+  - Failures in OE containers are often detected reactively rather than proactively.
+
+---
+
+#### **Proposed Solution to Overcome Challenges**
+1. **Centralized Management by OE Team:**
+   - Application teams should not have control over OE container configurations.
+   - The OE team will manage all configurations centrally using Kubernetes Operators.
+
+2. **Granular Rollbacks:**
+   - Implement mechanisms to roll back changes for specific roles, namespaces, or applications without affecting healthy services.
+
+3. **Policy Enforcement:**
+   - Use Kubernetes Operators to enforce policies and prevent application teams from overwriting OE container configurations.
+
+4. **Real-Time Monitoring and Alerting:**
+   - Integrate observability tools to monitor the status and performance of OE containers in real time.
+
+5. **Version Control and Rollouts:**
+   - Centralize version management for OE containers, ensuring consistent updates across all clusters.
+
+By addressing these challenges, the proposed solution will enhance observability infrastructure reliability, improve incident management, and reduce operational overhead.
