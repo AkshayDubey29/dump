@@ -1,111 +1,15 @@
-### **Challenges in the Current Deployment Model**
-
-The current deployment approach for OE (Observability Engineering) containers presents several operational challenges, especially during incidents like **INCIDENT-17594**, where reactive measures were inefficient and time-consuming. Below are detailed challenges faced in the current model:
-
----
-
-#### **1. Decentralized Control**
-- **Application Team's Autonomy Over Configurations:**
-  - Application teams currently manage OE container configurations as sidecars. This decentralized control allows teams to overwrite settings, resulting in:
-    - Inconsistent configurations across clusters and applications.
-    - Misconfigured OE containers, leading to failures or degraded observability.
-  - Example: During **INCIDENT-17594**, a misconfiguration in OE containers caused issues across multiple namespaces. Since the application teams were managing these configurations, identifying and resolving the root cause required significant manual intervention.
-
-- **Lack of Centralized Management:**
-  - No unified control mechanism for managing OE containers across clusters and namespaces.
-  - Changes to OE containers require coordination across multiple application teams, leading to delays and errors.
-
----
-
-#### **2. Broad Reversions During Incidents**
-- **Global Rollbacks:**
-  - In incidents like **INCIDENT-17594**, changes to OE containers had to be reverted across **all roles and namespaces**, even though the issue was specific to certain applications.
-  - This resulted in:
-    - **Unnecessary downtime** or degradation for unaffected applications.
-    - Increased recovery time, as OE containers were reverted globally rather than targeting faulty applications.
-
-- **Granularity Issues:**
-  - The current model lacks mechanisms to roll back changes for specific applications or namespaces. A global rollback impacts the stability and observability of healthy services.
-
----
-
-#### **3. Operational Overhead**
-- **Manual Troubleshooting:**
-  - During incidents, OE teams must manually identify faulty configurations across multiple namespaces and clusters.
-  - Application teams are often unaware of the impact of their changes on OE containers, further complicating troubleshooting.
-
-- **Delayed Incident Resolution:**
-  - Incident resolution requires coordination between the OE team and application teams, leading to delays in restoring normal operations.
-
-- **High Coordination Costs:**
-  - Each namespace or role may have different configurations, requiring the OE team to coordinate changes with multiple application teams.
-
----
-
-#### **4. Difficulty in Version Management**
-- **Inconsistent Updates:**
-  - Application teams pull container images from the OE repositories but may not update to the latest versions, leading to version fragmentation.
-  - Example: An outdated `log-forwarder` container in one namespace could fail to send logs correctly, while other namespaces with updated versions work fine.
-
-- **Complicated Rollouts:**
-  - Rolling out new versions or fixes across all clusters and namespaces is cumbersome and prone to errors.
-  - Application teams may delay adopting updates, causing observability inconsistencies.
-
----
-
-#### **5. Inefficient Change Control**
-- **Unrestricted Customization:**
-  - Application teams can customize OE container configurations without the OE team’s oversight, leading to:
-    - Resource mismanagement (e.g., oversized or undersized resource requests/limits).
-    - Unintended side effects, such as excessive logging causing Fluent Bit memory spikes.
-
-- **Lack of Policy Enforcement:**
-  - There is no centralized enforcement mechanism to ensure that all application teams adhere to OE team-defined standards.
-
----
-
-#### **6. Scalability Challenges**
-- **Multi-Cluster Complexity:**
-  - Applications are deployed across multiple clusters, but OE container configurations are not centrally managed.
-  - This increases the risk of inconsistent observability setups across clusters, making it harder to scale observability infrastructure effectively.
-
-- **Scaling Incident Impact:**
-  - In a multi-cluster setup, incidents like **INCIDENT-17594** have a cascading effect, impacting observability in all clusters.
-
----
-
-#### **7. Reactive Incident Management**
-- **Prolonged MTTR (Mean Time to Resolve):**
-  - Incident resolution often involves reverting to older configurations, which may require redeploying affected applications.
-  - Lack of targeted rollback capabilities leads to prolonged downtime.
-
-- **Incident Amplification:**
-  - A misconfigured OE container deployed globally can amplify the impact of an incident, as seen in **INCIDENT-17594**.
-
----
-
-#### **8. Limited Observability of OE Containers**
-- **No Real-Time Monitoring of OE Deployments:**
-  - The OE team lacks tools to monitor the health and status of OE containers across clusters in real time.
-  - Failures in OE containers are often detected reactively rather than proactively.
-
----
-
-#### **Proposed Solution to Overcome Challenges**
-1. **Centralized Management by OE Team:**
-   - Application teams should not have control over OE container configurations.
-   - The OE team will manage all configurations centrally using Kubernetes Operators.
-
-2. **Granular Rollbacks:**
-   - Implement mechanisms to roll back changes for specific roles, namespaces, or applications without affecting healthy services.
-
-3. **Policy Enforcement:**
-   - Use Kubernetes Operators to enforce policies and prevent application teams from overwriting OE container configurations.
-
-4. **Real-Time Monitoring and Alerting:**
-   - Integrate observability tools to monitor the status and performance of OE containers in real time.
-
-5. **Version Control and Rollouts:**
-   - Centralize version management for OE containers, ensuring consistent updates across all clusters.
-
-By addressing these challenges, the proposed solution will enhance observability infrastructure reliability, improve incident management, and reduce operational overhead.
+- Application teams have the freedom to overwrite OE container configurations, leading to inconsistencies across clusters and namespaces.  
+- Lack of centralized control over OE container versions, resource configurations, and deployments.  
+- Broad rollbacks during incidents (e.g., **INCIDENT-17594**) require reverting changes across all roles and namespaces, even for unaffected applications.  
+- No granularity in rollbacks or updates, making it difficult to isolate faulty applications and avoid unnecessary downtime.  
+- Manual updates and configurations are time-consuming, error-prone, and require coordination with multiple application teams.  
+- Inefficient incident resolution processes prolong Mean Time to Resolve (MTTR) due to decentralized configuration management.  
+- Delayed adoption of updates by application teams leads to version fragmentation and inconsistent observability setups.  
+- Resource mismanagement due to application teams customizing resource requests and limits without OE team oversight.  
+- Scaling challenges in multi-cluster environments where configurations are not centrally managed, increasing the risk of inconsistencies.  
+- Limited visibility into the deployment and health status of OE containers across all clusters.  
+- Reactive incident management due to lack of real-time monitoring and centralized control over observability containers.  
+- Amplified impact of configuration errors as misconfigured OE containers affect multiple clusters or namespaces.  
+- High operational overhead for the OE team to coordinate changes and ensure compliance across all application teams.  
+- Lack of enforced policies to standardize OE container configurations, leading to unpredictable behaviors in the observability infrastructure.  
+- Difficulty in maintaining observability reliability during scaling events or new application deployments.
