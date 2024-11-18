@@ -1,0 +1,60 @@
+                                     +------------------------------------------------+
+                                     |                Application Teams               |
+                                     |------------------------------------------------|
+                                     | - Define application configs in coupang_deployment |
+                                     | - Add Labels/Annotations (e.g., role, namespace)   |
+                                     +------------------------------------------------+
+                                                        |
+                                                        v
+       +--------------------------------+          +--------------------+
+       |       coupang_deployment       |          |     oe-operator     |
+       |     (GitHub Repository)        |          | (HA Enabled,        |
+       | - Application deployment files |--------> | Deployed in 1-2    |
+       | - JSONNET configs              |          | Central Clusters)  |
+       +--------------------------------+          +--------------------+
+                                                        |
+                                                        v
+                        +-----------------------------------------------+
+                        |           High Availability Operator          |
+                        |-----------------------------------------------|
+                        | - Watches CRD definitions                    |
+                        | - Reconciles desired state with actual state |
+                        | - Deploys OE containers                      |
+                        | - Runs with Leader Election for HA           |
+                        +-----------------------------------------------+
+                                                        |
+                              +-------------------------+-------------------------+
+                              |                                                 |
+                              v                                                 v
+       +-----------------------------------------------+       +-----------------------------------------------+
+       |         Kubernetes Central Cluster            |       |      Kubernetes Central Cluster (HA)         |
+       |-----------------------------------------------|       |-----------------------------------------------|
+       | - Runs the Kubernetes Operator                |       | - Acts as a failover for the Operator         |
+       | - Stores CRD configurations for OE containers |       | - Shares state with primary Operator          |
+       +-----------------------------------------------+       +-----------------------------------------------+
+                                                        |
+                                                        v
+                             +-------------------------------------------------------+
+                             |                   Multi-Cluster Applications          |
+                             |-------------------------------------------------------|
+                             | Cluster 1                                             |
+                             | +-------------------+  +---------------------------+  |
+                             | | Application Pods  |  | Deployed OE Containers    |  |
+                             | +-------------------+  | (e.g., Exporters, Agents) |  |
+                             | Cluster 2                                             |
+                             | +-------------------+  +---------------------------+  |
+                             | | Application Pods  |  | Deployed OE Containers    |  |
+                             | +-------------------+  | (e.g., Exporters, Agents) |  |
+                             | Cluster N                                             |
+                             | +-------------------+  +---------------------------+  |
+                             | | Application Pods  |  | Deployed OE Containers    |  |
+                             | +-------------------+  | (e.g., Exporters, Agents) |  |
+                             +-------------------------------------------------------+
+                                                        ^
+                                                        |
+                             +-------------------------+-------------------------+
+                             |                  Logs, Metrics, and Alerts       |
+                             |--------------------------------------------------|
+                             | - Observability data is forwarded to monitoring  |
+                             |   systems like Grafana, Prometheus, Splunk, etc. |
+                             +--------------------------------------------------+
