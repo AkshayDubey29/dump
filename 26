@@ -1,178 +1,119 @@
-### **Controlled Deployments for OE Containers**
-
----
-
-#### **1. Overview**
-
-The Observability Engineering (OE) containers, such as exporters, forwarders, and agents, are critical components of the observability infrastructure. Currently, these containers are deployed as sidecars by application teams using the **coupang_deployment** GitHub repository. While this approach provides flexibility to application teams, it introduces challenges in managing and standardizing observability across the organization:
-
-- **Challenges:**
-  - Application teams can overwrite OE configurations, leading to inconsistencies.
-  - Lack of centralized control over the deployment process.
-  - Difficulty in rolling out updates or managing versions across multiple environments.
-
-To address these challenges, we propose a **centralized, controlled deployment strategy** using **Kubernetes Operators**. This approach ensures that OE container configurations and deployments are centrally managed by the Observability Engineering (OE) team, removing the ability for application teams to overwrite configurations.
-
----
-
-### **2. Proposed Architecture**
-
-#### **Components**
-
-1. **Application Teams:**
-   - Application teams continue using the **coupang_deployment** repository for deployment but no longer manage OE container configurations directly.
-   - They add Labels/Annotations in their deployments to define the role or service, allowing the Operator to deploy appropriate OE containers.
-
-2. **GitHub Repositories:**
-   - **coupang_deployment:** Houses application deployment files (e.g., templates and JSONNET configurations).
-   - **oe-operator-repo:** Dedicated repository for the Kubernetes Operator and CRD definitions to manage OE containers.
-   - **monitoring-repo:** Contains container images, Helm charts, and observability configurations for OE containers.
-
-3. **Kubernetes Operator:**
-   - Responsible for managing OE container deployments based on Labels/Annotations defined by the application teams.
-   - Pulls configurations from the **oe-operator-repo** and container images from the **monitoring-repo**.
-   - Enforces policies to prevent configuration overwrites by application teams.
-
-4. **Custom Resource Definitions (CRDs):**
-   - Defines OE container configurations, including:
-     - Image versions
-     - Resource limits
-     - Roles, namespaces, and services for deployment
-
-5. **Labels and Annotations:**
-   - Used by application teams to tag their services with metadata (e.g., `role=prod`, `namespace=observability`).
-   - Guides the Operator in determining which OE containers to deploy.
-
----
-
-#### **Workflow**
+Here’s an updated **ASCII diagram** representing the proposed architecture, considering **multi-cluster application deployments** and the **Kubernetes Operator running on one or two clusters with HA enabled**:
 
 ```
-+----------------+        +---------------------+        +-----------------------+
-| Application    |        | coupang_deployment |        | oe-operator-repo      |
-| Teams          |        | (GitHub Repo)      |        | (GitHub Repo)         |
-+----------------+        +---------------------+        +-----------------------+
-       |                           |                              |
-       | Add Labels/Annotations    | Application Deployment       |
-       | in deployment configs     | Configuration Updates        |
-       +--------------------------->+                             |
-                                   |                              |
-                                   |     +-----------------------+
-                                   |     | Kubernetes Cluster    |
-                                   |     | +-------------------+ |
-                                   |     | | OE Operator       |<----------------+
-                                   |     | +-------------------+ |   Pulls Config
-                                   |     +-----------------------+   from oe-operator-repo
-                                   |                |
-                                   |                |
-+------------------------+          |   Fetch Images | +-------------------------+
-| monitoring-repo       |<---------+  & Configs     | | Kubernetes Applications |
-| (GitHub Repo with     |              Deploy OE    | | +---------------------+ |
-| Container Images)     |              Containers   | | | OE Containers       | |
-+------------------------+                          | | +---------------------+ |
-                                                   | +-------------------------+
-                                                   |
-                                   Logs, Metrics, & Status
-                                   (to Monitoring Systems)
+                                     +------------------------------------------------+
+                                     |                Application Teams               |
+                                     |------------------------------------------------|
+                                     | - Define application configs in coupang_deployment |
+                                     | - Add Labels/Annotations (e.g., role, namespace)   |
+                                     +------------------------------------------------+
+                                                        |
+                                                        v
+       +--------------------------------+          +--------------------+
+       |       coupang_deployment       |          |     oe-operator     |
+       |     (GitHub Repository)        |          | (HA Enabled,        |
+       | - Application deployment files |--------> | Deployed in 1-2    |
+       | - JSONNET configs              |          | Central Clusters)  |
+       +--------------------------------+          +--------------------+
+                                                        |
+                                                        v
+                        +-----------------------------------------------+
+                        |           High Availability Operator          |
+                        |-----------------------------------------------|
+                        | - Watches CRD definitions                    |
+                        | - Reconciles desired state with actual state |
+                        | - Deploys OE containers                      |
+                        | - Runs with Leader Election for HA           |
+                        +-----------------------------------------------+
+                                                        |
+                              +-------------------------+-------------------------+
+                              |                                                 |
+                              v                                                 v
+       +-----------------------------------------------+       +-----------------------------------------------+
+       |         Kubernetes Central Cluster            |       |      Kubernetes Central Cluster (HA)         |
+       |-----------------------------------------------|       |-----------------------------------------------|
+       | - Runs the Kubernetes Operator                |       | - Acts as a failover for the Operator         |
+       | - Stores CRD configurations for OE containers |       | - Shares state with primary Operator          |
+       +-----------------------------------------------+       +-----------------------------------------------+
+                                                        |
+                                                        v
+                             +-------------------------------------------------------+
+                             |                   Multi-Cluster Applications          |
+                             |-------------------------------------------------------|
+                             | Cluster 1                                             |
+                             | +-------------------+  +---------------------------+  |
+                             | | Application Pods  |  | Deployed OE Containers    |  |
+                             | +-------------------+  | (e.g., Exporters, Agents) |  |
+                             | Cluster 2                                             |
+                             | +-------------------+  +---------------------------+  |
+                             | | Application Pods  |  | Deployed OE Containers    |  |
+                             | +-------------------+  | (e.g., Exporters, Agents) |  |
+                             | Cluster N                                             |
+                             | +-------------------+  +---------------------------+  |
+                             | | Application Pods  |  | Deployed OE Containers    |  |
+                             | +-------------------+  | (e.g., Exporters, Agents) |  |
+                             +-------------------------------------------------------+
+                                                        ^
+                                                        |
+                             +-------------------------+-------------------------+
+                             |                  Logs, Metrics, and Alerts       |
+                             |--------------------------------------------------|
+                             | - Observability data is forwarded to monitoring  |
+                             |   systems like Grafana, Prometheus, Splunk, etc. |
+                             +--------------------------------------------------+
 ```
 
 ---
 
-### **3. Detailed Explanation of Components**
+### **Details of the Updated Architecture**
 
-#### **3.1 Application Teams**
-- Teams continue using **coupang_deployment** for application configurations.
-- They specify **Labels** and **Annotations** to indicate the role, namespace, and environment (e.g., `role=prod`, `namespace=observability`).
-- Example deployment file:
-```jsonnet
-local telemetry = import "telemetry.jsonnet";
+#### **1. Multi-Cluster Application Deployments**
+- Applications are deployed across **multiple Kubernetes clusters (Cluster 1, Cluster 2, ..., Cluster N)**.
+- Each cluster runs application pods and the required OE containers (exporters, forwarders, agents).
 
-{
-  containers: [
-    telemetry.LogForwardContainer(
-      cmdb_service='app-service',
-      profile='prod',
-      resources={
-        limits: { cpu: "200m", memory: "256Mi" },
-        requests: { cpu: "100m", memory: "128Mi" },
-      }
-    )
-  ],
-  metadata: {
-    labels: { "role": "prod", "namespace": "observability" },
-  },
-}
-```
+#### **2. Centralized Operator Deployment**
+- The Kubernetes Operator runs in **one or two central clusters** with **High Availability (HA)**:
+  - **HA Implementation**:
+    - Leader Election ensures only one instance of the Operator is actively managing configurations at any time.
+    - Failover mechanisms allow a secondary Operator to take over in case of failure.
 
----
+#### **3. Workflow**
+1. **Application Teams**:
+   - Use the **coupang_deployment** repository to define application configurations.
+   - Add Labels/Annotations (e.g., `role=prod`, `namespace=observability`) to specify deployment requirements.
 
-#### **3.2 GitHub Repositories**
-1. **coupang_deployment:**
-   - Hosts deployment configurations for applications.
-   - Contains JSONNET files where application teams add metadata for Operator-based deployment.
-   
-2. **oe-operator-repo:**
-   - Contains the Operator logic and CRD definitions.
-   - Example CRD for managing a `log-forwarder` container:
-     ```yaml
-     apiVersion: oe.example.com/v1
-     kind: OEContainer
-     metadata:
-       name: log-forwarder
-       namespace: observability
-     spec:
-       role: prod
-       image: "artifactory.coupang.net/oet/release/log-forward-v2:latest"
-       resources:
-         limits:
-           cpu: "500m"
-           memory: "512Mi"
-         requests:
-           cpu: "200m"
-           memory: "256Mi"
-       labels:
-         team: observability
-         environment: production
-     ```
+2. **Kubernetes Operator**:
+   - Watches CRDs in the central clusters.
+   - Manages OE container deployments across all clusters (e.g., Cluster 1, Cluster 2, Cluster N).
+   - Uses Labels/Annotations to determine where and how OE containers should be deployed.
 
-3. **monitoring-repo:**
-   - Hosts container images, Helm charts, and observability configurations for OE containers.
-   - All OE containers (e.g., `log-forwarder`, `jmx-exporter`, `nginx-latency-exporter`) are built and stored here.
+3. **Multi-Cluster Management**:
+   - The Operator in the central clusters uses **Kubernetes API aggregation** to manage deployments across multiple clusters.
+   - Deploys OE containers to target clusters based on Labels and Annotations.
+
+4. **Observability**:
+   - Deployed OE containers (e.g., exporters, forwarders, agents) in application clusters send logs, metrics, and traces to centralized monitoring systems like **Grafana**, **Prometheus**, or **Splunk**.
 
 ---
 
-#### **3.3 Kubernetes Operator**
-- Watches for CR changes or Label/Annotation updates.
-- Automatically deploys or updates OE containers in target namespaces.
-- Ensures application teams cannot overwrite configurations by reconciling the desired state from CRDs.
+### **Benefits of the Proposed HA Deployment**
+1. **High Availability**:
+   - Redundant Operators ensure continued operation in case of a failure.
+   - Leader Election avoids conflicts between multiple Operators.
+
+2. **Centralized Control**:
+   - Configuration and deployment logic are managed centrally in one or two clusters.
+   - Simplifies multi-cluster management.
+
+3. **Scalability**:
+   - Supports a large number of application clusters with consistent and automated deployments.
+
+4. **Fault Tolerance**:
+   - Failover mechanisms and Leader Election ensure reliability.
+
+5. **Observability**:
+   - Uniform observability setup across all clusters with minimal manual effort.
 
 ---
 
-#### **3.4 Labels and Annotations**
-- Define deployment scope for OE containers.
-- Example:
-  - `role=prod`: Deploy production-ready configurations.
-  - `namespace=observability`: Deploy to observability-related services.
-
----
-
-### **4. Advantages of Proposed Approach**
-1. **Centralized Control**:
-   - OE team manages all configurations, ensuring consistency across services.
-2. **Dynamic Scaling**:
-   - Deployments are automated based on Labels/Annotations, reducing manual effort.
-3. **Version Management**:
-   - Easy upgrades and rollbacks using the Operator.
-4. **Improved Security**:
-   - Prevents unauthorized modifications by application teams.
-
----
-
-### **5. Future Scope**
-1. Integrate CI/CD pipelines for automated deployment of Operator configurations.
-2. Implement advanced scheduling policies based on cluster load and events.
-3. Expand Operator functionality to manage non-OE containers in the future.
-
----
-
-Would you like additional details or help with specific implementation?
+Let me know if you need further details or refinements!
