@@ -1,83 +1,15 @@
-Comparison Table: Sidecar vs. DaemonSet
-Aspect	Sidecar Containers	DaemonSet
-Resource Overhead	High (one sidecar per pod, increasing CPU/memory usage)	Low (one instance per node, shared across all pods on that node)
-Scalability	Less scalable (scales with pods, leading to many sidecars)	More scalable (scales with nodes, fewer instances needed)
-Customization	High (each pod can have its own configuration)	Low (centralized configuration per node)
-Log Isolation	High (each pod has its own logging instance)	Moderate (logs are aggregated at the node level)
-Operational Overhead	High (managing sidecars for each pod)	Low (managing one DaemonSet per node)
-Failure Impact	Low (only affects one pod)	Moderate (if the DaemonSet fails, logs from all pods on the node are lost)
-Network Load	Low (sidecars only forward logs from their own pod)	Higher risk of bottleneck (all pod logs from the node are forwarded by one agent)
-Cost Efficiency	Less efficient (more agents mean higher infrastructure costs)	More efficient (fewer logging agents)
-Management Complexity	High (many sidecars to manage)	Low (single DaemonSet to manage)
-Latency in Log Collection	Low (logs collected close to where they are generated)	Potentially higher (logs from all pods on the node aggregated)
+#!/bin/bash
 
+# Input file
+input_file="input.txt"
 
+# Output file
+output_file="output.txt"
 
+# Extract namespace names and replace hyphens with underscores
+grep -oP '(?<=namespace=").*?(?=")' "$input_file" | while read -r namespace; do
+    modified_namespace=$(echo "$namespace" | tr '-' '_')
+    echo "$modified_namespace" >> "$output_file"
+done
 
-
-User Stories:
-
-
-User Type	Responsibilities	Key Concerns
-Observability Engineers	Oversee end-to-end observability, ensuring logging, metrics, traces, and events are collected consistently.	Ensuring that the observability infrastructure can handle spikes in telemetry data without overwhelming the system.
-Application Development Teams	Develop e-commerce services and are responsible for adding correct instrumentation for logs, metrics, traces, and events.	Instrumenting services correctly to provide useful observability data while avoiding telemetry overload.
-DevOps/SRE Teams	Manage the CI/CD pipeline, infrastructure, and observability tooling, and ensure proper resource allocation.	Ensuring that metrics and logs don’t cause performance degradation during deployments or traffic spikes.
-Business Analytics Teams	Use observability data (metrics, logs, events) to drive business insights and measure KPIs (e.g., cart abandonment rates).	Missing or delayed telemetry data leads to inaccurate or incomplete business reports.
-Security Teams	Ensure observability data (logs, events) adhere to compliance and security requirements (e.g., log anonymization, retention).	Ensuring that observability data is securely collected and stored without violating compliance regulations.
-Product Managers	Responsible for product performance and service reliability, tracking metrics like page load times, cart abandonment, and uptime.	Delays or performance degradation in critical services due to missing metrics or event storms.
-
-
-
-Technical Plan for End-to-End Observability System Implementation at Coupang (DaemonSet-based Approach)
-Goal:
-To build a robust, scalable, low-impact observability system using DaemonSet-based logging and OpenTelemetry for capturing logs, metrics, traces, and events across all services with minimal changes required for application teams. This system will integrate seamlessly into Coupang's existing infrastructure, utilizing Grafana Loki for log storage, Prometheus for metrics collection, and Jaeger for traces, with the option to extend to additional storage destinations like Kafka or S3 for scalability.
-
-Step-by-Step Technical Plan
-Step	Description	Why This Step?	Impact on Applications	Tools/Technologies Used
-1. Assess Existing Observability Stack	Analyze the current observability infrastructure, particularly the use of Fluent Bit, Grafana Loki, and Prometheus. Identify gaps in log, metric, and trace collection across environments (Dev/Prod).	Establish a baseline for what works and identify gaps such as missing logs during pod startup in production.	No changes to applications. Backend assessment only.	Fluent Bit, Grafana Loki, Prometheus, OpenTelemetry SDK, Kubernetes, EC2
-2. Integrate OpenTelemetry SDK Across All Services	Use the OpenTelemetry SDK for standardizing the collection of logs, metrics, and traces. This will include SDK integration for Java, Python, Go, etc.	Ensures consistent collection of logs, metrics, and traces across all services, providing a unified observability approach.	Applications will need to integrate the OpenTelemetry SDK.	OpenTelemetry SDK (Java, Python, Go), OpenTelemetry Collector, Kubernetes, EC2
-3. Deploy Fluent Bit and OpenTelemetry Collector as DaemonSet	Deploy Fluent Bit and OpenTelemetry Collector as DaemonSets on each node. Fluent Bit collects logs from all pods, while OpenTelemetry Collector captures metrics and traces.	Centralized control for log and metric collection, reducing per-service configuration overhead and decoupling observability agents from application containers.	No changes for applications; managed by DaemonSets in the infrastructure.	Fluent Bit, OpenTelemetry Collector, Kubernetes DaemonSet, Grafana Loki, Prometheus
-4. Build a Shared Logging and Metrics Library	Develop a shared library that encapsulates OpenTelemetry for logging and metrics collection, offering default configurations for log formatting, metric definitions, and trace capabilities.	Reduces the need for application teams to manually configure logs, metrics, and traces, and ensures adherence to observability standards.	Applications integrate the shared library with minimal effort.	OpenTelemetry SDK, Fluent Bit, OpenTelemetry Collector, Grafana Loki, Prometheus
-5. Centralize Log and Metric Aggregation	Set up OpenTelemetry Collectors to aggregate logs, metrics, and traces before forwarding them to Grafana Loki (for logs) and Prometheus (for metrics).	Standardizes the flow of logs, metrics, and traces across services, reducing complexity at the application level.	No changes for applications; this step is infrastructure-focused.	OpenTelemetry Collector, Fluent Bit, Grafana Loki, Prometheus
-6. Ensure Parity Between Development and Production Environments	Synchronize configurations between development and production, ensuring consistent behavior (e.g., resource allocation, logging setup) across both environments.	Fixes discrepancies between environments (e.g., missing logs during pod startup in production).	No changes to applications; applied mainly to infrastructure.	Kubernetes, EC2, OpenTelemetry Collector, Fluent Bit
-7. Implement Rate Limiting and Throttling for Log and Metrics Ingestion	Introduce rate limiting and throttling at the Fluent Bit and OpenTelemetry Collector levels, especially during traffic spikes.	Prevents system overloads during high-traffic periods and ensures that critical logs and metrics are prioritized.	No changes for applications; managed through infrastructure tools.	Fluent Bit, OpenTelemetry Collector, Grafana Loki, Prometheus
-8. Unified Observability Dashboard with Grafana	Build a unified dashboard in Grafana that aggregates logs (Grafana Loki), metrics (Prometheus), and traces (Jaeger).	Reduces observability fragmentation and allows quick troubleshooting via a single-pane-of-glass view.	No changes for application teams; the unified observability data is accessible via Grafana.	Grafana, Grafana Loki, Prometheus, OpenTelemetry SDK, Jaeger
-9. Canary Testing for Pod Scaling and Log Forwarding	Deploy canary pods during scaling events to verify log forwarding before scaling the entire service.	Ensures that logs are not lost during scaling events and avoids issues with missing pod startup logs.	No changes for applications; managed through Kubernetes pod scaling events.	Kubernetes, Fluent Bit, Grafana Loki
-10. Adaptive Sampling for Metrics and Traces	Enable adaptive sampling in the OpenTelemetry Collector to prioritize critical metrics and traces during high-traffic events.	Helps manage resource consumption by limiting non-critical data during peak traffic, improving overall performance.	No changes for application teams; managed by OpenTelemetry Collector settings.	OpenTelemetry Collector, Prometheus, Jaeger
-11. Automate Log and Metrics Retention Policies	Implement automated retention and archival policies for logs and metrics. Logs will be archived to S3 after a defined period, and metrics will have retention windows based on their importance.	Reduces storage costs while ensuring compliance with retention policies.	No changes for applications; managed through infrastructure-level configurations.	Fluent Bit, Grafana Loki, S3 (for archival), Prometheus
-12. Event Storm Detection and Management	Implement event storm detection using OpenTelemetry Collector and Prometheus to throttle non-critical events during high-traffic periods.	Ensures that critical events are prioritized and prevents the system from being overwhelmed.	No changes for applications; handled by the observability system.	OpenTelemetry Collector, Prometheus, Grafana
-13. CI/CD Pipeline Integration for Observability Checks	Integrate CircleCI Gatekeeper checks to ensure that all services are instrumented with the OpenTelemetry SDK before deployment.	Ensures observability standards are met across all services before going live, reducing gaps in monitoring.	Minimal changes required for application teams to pass observability checks in CI/CD pipelines.	CircleCI, OpenTelemetry SDK, CircleCI Gatekeeper
-14. Post-Deployment Monitoring and Incident Reporting	Set up monitoring and incident reporting for new pods and services after deployment, focusing on startup logs and scaling events.	Provides quick visibility into service behavior in production, allowing faster detection and resolution of issues.	No changes for applications; applied during production monitoring phases.	Fluent Bit, Grafana Loki, Prometheus, Kubernetes
-Technical Tools/Technologies Breakdown
-Component	Technology/Tool	Purpose
-Logging	Fluent Bit (DaemonSet)	Log collection and forwarding from all application pods to Grafana Loki.
-Metrics	Prometheus	Metrics collection, storage, and alerting for system and application metrics.
-Traces	Jaeger, OpenTelemetry Collector	Distributed tracing to track request flows across services.
-Log Storage & Archiving	Grafana Loki, S3 (for archival)	Centralized log storage in Grafana Loki, with archival to S3 for long-term storage.
-Unified Dashboard	Grafana	Centralized dashboard for logs, metrics, and traces, providing a unified view of observability data.
-Instrumentation	OpenTelemetry SDK	Instrumentation of applications for logs, metrics, and traces.
-Log & Metric Aggregation	OpenTelemetry Collector	Aggregates logs, metrics, and traces before sending them to destinations (Prometheus, Grafana Loki).
-CI/CD Enforcement	CircleCI, CircleCI Gatekeeper	Ensures proper observability instrumentation before deployment.
-Pod Monitoring	Kubernetes, Canary Pods	Monitors log forwarding during pod scaling events to prevent data loss.
-Event Management	OpenTelemetry Collector, Prometheus	Event collection, management, and detection of event storms.
-Sampling	OpenTelemetry Collector	Adaptive sampling to prioritize critical metrics and traces during high-traffic periods.
-Order of Implementation with Justifications
-Assess Existing Observability Stack
-Why: Establish a baseline and identify gaps in the current observability stack, especially around missing logs during pod scaling.
-Impact: No changes to applications, minimal system impact.
-
-Integrate OpenTelemetry SDK Across All Services
-Why: Standardize logs, metrics, and traces using the OpenTelemetry framework.
-Impact: Minimal changes for applications; teams will integrate the SDK.
-
-Deploy Fluent Bit and OpenTelemetry Collector as DaemonSet
-Why: Centralize logging and metrics collection, reducing per-service configuration overhead.
-Impact: No changes for applications; managed via DaemonSet.
-
-Build a Shared Logging and Metrics Library
-Why: Simplify observability integration and ensure consistent log and metric formats.
-Impact: Minimal changes for application teams; they only need to integrate the shared library.
-
-Implement Adaptive Sampling for Metrics and Traces
-Why: Improve system efficiency by reducing the amount of non-critical data collected during peak traffic.
-Impact: No changes for application teams; managed through the OpenTelemetry Collector.
+echo "Namespaces have been extracted and hyphens replaced with underscores. Check $output_file for results."
