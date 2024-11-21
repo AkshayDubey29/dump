@@ -6,10 +6,11 @@ input_file="input.txt"
 # Output file
 output_file="output.txt"
 
-# Extract namespace names and replace hyphens with underscores
-grep -oP '(?<=namespace=").*?(?=")' "$input_file" | while read -r namespace; do
-    modified_namespace=$(echo "$namespace" | tr '-' '_')
-    echo "$modified_namespace" >> "$output_file"
-done
+# Process the file
+awk -F '"' '/namespace=/ {
+    namespace = $2
+    gsub("-", "_", namespace)
+    print namespace
+}' "$input_file" > "$output_file"
 
 echo "Namespaces have been extracted and hyphens replaced with underscores. Check $output_file for results."
