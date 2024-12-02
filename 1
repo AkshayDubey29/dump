@@ -1,45 +1,23 @@
-### Finalized Comprehensive Migration Effort Estimation Table with Buffers, Reasons, and Consistent Indicators
+### Root Cause Analysis
 
-This table assumes an **average engineer's productivity** and includes buffer time for unforeseen delays or complexities.
+The high CPU usage issue in the domain side for the log-forwarding service stemmed from suboptimal resource allocation and thread management in the log-relay service pods. The service was configured with a higher-than-necessary number of threads per pod, leading to excessive contention for CPU resources during peak operations. This configuration caused CPU usage to spike unpredictably, directly impacting log-processing efficiency and creating a bottleneck for downstream services relying on timely log delivery. The autoscaling setup was not optimized to handle sudden surges in CPU utilization, further compounding the issue. This oversight resulted in performance degradation across multiple systems, including Eats, Marketplace, Search Infrastructure, and Order Pre-Purchase services.
 
-| Task ID | Phase         | Task                                                              | Effort (Person-Days) | Buffer (Person-Days) | Total Effort (Person-Days) | Priority               | Parallelizable         | Dependency | Reason                                                      |
-|---------|---------------|------------------------------------------------------------------|----------------------|-----------------------|----------------------------|------------------------|------------------------|------------|-------------------------------------------------------------|
-| A1      | Analysis      | Extract detailed list of 98,420 alert rules                      | 10                   | 2                     | 12                         | 🔴 Must-Have           | 🟢 Yes                 | None       | Comprehensive extraction ensures no alerts are missed.      |
-| A2      | Analysis      | Classify rules into metric-based and custom alerts               | 5                    | 1                     | 6                          | 🔴 Must-Have           | 🟢 Yes                 | A1         | Classification is critical for prioritizing migration tasks.|
-| A3      | Analysis      | Identify service-level dependencies                              | 7                    | 2                     | 9                          | 🔴 Must-Have           | 🔴 No                  | A2         | Dependency mapping ensures smooth rule migration.           |
-| A4      | Analysis      | Map subscribers to rules and notification modes                 | 8                    | 2                     | 10                         | 🔴 Must-Have           | 🔴 No                  | A3         | Proper mapping prevents alert delivery issues.              |
-| A5      | Analysis      | Validate CouWatch's ability to handle 98,420 rules               | 5                    | 1                     | 6                          | 🔴 Must-Have           | 🟢 Yes                 | A4         | Ensures CouWatch's capacity to manage all alerts.           |
-| U1      | Utility Design| Design architecture for migration utility in Coumon              | 10                   | 2                     | 12                         | 🔴 Must-Have           | 🔴 No                  | A5         | Robust design ensures smooth and scalable migration.        |
-| U2      | Development   | Develop backend APIs for rule migration in Coumon                | 15                   | 3                     | 18                         | 🔴 Must-Have           | 🟢 Yes                 | U1         | Backend handles rule extraction and transformation logic.   |
-| U3      | Development   | Develop user-friendly UI for migration utility                  | 15                   | 3                     | 18                         | 🔴 Must-Have           | 🟢 Yes                 | U2         | Intuitive UI simplifies user migration experience.          |
-| U4      | Testing       | Unit testing for utility APIs                                    | 10                   | 2                     | 12                         | 🟠 Good-to-Have        | 🟢 Yes                 | U3         | Ensures functionality of individual API components.         |
-| U5      | Testing       | End-to-end testing of migration utility                          | 10                   | 3                     | 13                         | 🔴 Must-Have           | 🔴 No                  | U4         | Validates the utility's full workflow for users.            |
-| U6      | User Adoption | Roll out migration utility to Coumon users                       | 10                   | 2                     | 12                         | 🔴 Must-Have           | 🔴 No                  | U5         | Enables users to migrate alerts to CouWatch seamlessly.     |
-| U7      | Support       | Provide user training and documentation for the utility          | 8                    | 2                     | 10                         | 🟠 Good-to-Have        | 🟢 Yes                 | U6         | Empowers users to operate the migration utility effectively.|
-| M1      | Migration     | Migrate metric-based alerts using Grafana API                   | 30                   | 5                     | 35                         | 🔴 Must-Have           | 🟢 Yes                 | A4         | Automates migration of metric-based alerts.                 |
-| M2      | Migration     | Batch test metric-based alerts post-migration                   | 20                   | 4                     | 24                         | 🔴 Must-Have           | 🔴 No                  | M1         | Verifies migrated alerts for functionality and accuracy.    |
-| M3      | Migration     | Migrate custom rules manually in Grafana UI                     | 40                   | 5                     | 45                         | 🔴 Must-Have           | 🔴 No                  | M2         | Custom rules require manual intervention for migration.     |
-| M4      | Migration     | Test custom rules for accuracy                                  | 15                   | 3                     | 18                         | 🔴 Must-Have           | 🟢 Yes                 | M3         | Ensures that custom rules work as expected post-migration.  |
-| T1      | Testing       | Integration testing of migrated alerts                          | 15                   | 3                     | 18                         | 🔴 Must-Have           | 🔴 No                  | M4         | Confirms that migrated alerts integrate with CouWatch.      |
-| T2      | Testing       | User acceptance testing of notification delivery                | 10                   | 2                     | 12                         | 🟠 Good-to-Have        | 🟢 Yes                 | T1         | Ensures notifications meet user expectations.               |
-| V1      | Validation    | Validate accuracy of alert triggers and response times          | 10                   | 2                     | 12                         | 🔴 Must-Have           | 🔴 No                  | T2         | Validates the reliability and accuracy of alert triggers.   |
-| V2      | Validation    | Ensure performance improvements post-migration                  | 5                    | 1                     | 6                          | 🟠 Good-to-Have        | 🟢 Yes                 | V1         | Confirms performance goals are met post-migration.          |
-| E1      | Execution     | Deploy backup notification mechanisms                           | 10                   | 2                     | 12                         | 🔴 Must-Have           | 🟢 Yes                 | V2         | Ensures backup mechanisms are ready in case of issues.      |
-| E2      | Execution     | Monitor performance and optimize settings post-migration        | 10                   | 2                     | 12                         | 🟠 Good-to-Have        | 🟢 Yes                 | E1         | Optimizes settings for sustained post-migration efficiency. |
+### Issue Detection Summary
 
----
+The issue was detected manually when monitoring tools showed consistent CPU spikes for the log-relay service in the KR region. The elevated CPU usage was identified through the logs and performance dashboards in Grafana, specifically via metrics indicating higher-than-normal request handling times. These metrics flagged potential anomalies in the system, prompting immediate attention. However, automated alerts failed to capture the issue in a timely manner, which delayed incident acknowledgment. This gap highlighted deficiencies in existing alerting configurations for resource utilization thresholds.
 
-### Key Changes:
-1. **Reason Column Added**:
-   - Provides a rationale for each task's inclusion in the plan.
+### Remediation Actions
 
-2. **Buffers Integrated**:
-   - Accounts for unexpected delays or complexities.
+To address the issue, the Observability Engineering (OE) team took the following steps:
+1. **Redeployment of log-relay pods:** The team reduced the number of threads per pod to align with the minimum CPU allocation per container, ensuring stable and predictable performance.
+2. **Autoscaling enabled:** Dynamic autoscaling was configured for the log-relay service to accommodate varying loads without overburdening the system.
+3. **Traffic Limitation:** Measures were introduced to cap request usage at a sustainable level, preventing resource exhaustion under peak loads.
 
-3. **Effort and Prioritization**:
-   - Clearly identifies critical tasks (**🔴 Must-Have**) versus less critical ones (**🟠 Good-to-Have**).
+### Lessons Learned
+1. **Improved Alerting:** The incident exposed the need to refine alerting thresholds to proactively detect abnormal CPU usage and reduce dependency on manual detection methods.
+2. **Optimized Resource Management:** Proper allocation of threads and CPU limits is critical to maintaining predictable performance in containerized environments.
+3. **Load Testing:** Regular stress and load testing must be conducted to identify potential scalability issues and optimize autoscaling policies.
+4. **Automation for Consistency:** Relying on manual interventions delayed mitigation. Automating deployment configurations and updates can prevent similar incidents.
+5. **Cross-Service Dependency Checks:** High CPU usage in log-relay affected multiple systems. Establishing a robust dependency monitoring framework can better mitigate cascading impacts.
 
-4. **Consistent Indicators**:
-   - **Parallelizable:** **🟢 Yes**, **🔴 No** for clarity.
-
-Let me know if further details are needed!
+These lessons will be incorporated into operational workflows to enhance system reliability and performance.
