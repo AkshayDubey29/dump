@@ -1,23 +1,51 @@
-### Root Cause Analysis
+# Fetch details of the merged PR that triggered this job
+TRIGGERING_PR_NUMBER=$(curl -s -H "Authorization: token $SVC_GITHUB_TOKEN" \
+    "https://api.github.com/repos/${CURRENT_REPO_OWNER}/${CURRENT_REPO}/commits/${CIRCLE_SHA1}" | jq -r '.commit.message' | grep -oP '#\K\d+')
 
-The high CPU usage issue in the domain side for the log-forwarding service stemmed from suboptimal resource allocation and thread management in the log-relay service pods. The service was configured with a higher-than-necessary number of threads per pod, leading to excessive contention for CPU resources during peak operations. This configuration caused CPU usage to spike unpredictably, directly impacting log-processing efficiency and creating a bottleneck for downstream services relying on timely log delivery. The autoscaling setup was not optimized to handle sudden surges in CPU utilization, further compounding the issue. This oversight resulted in performance degradation across multiple systems, including Eats, Marketplace, Search Infrastructure, and Order Pre-Purchase services.
+# Get details of the triggering PR
+TRIGGERING_PR_DETAILS=$(curl -s -H "Authorization: token $SVC_GITHUB_TOKEN" \
+    "https://api.github.com/repos/${CURRENT_REPO_OWNER}/${CURRENT_REPO}/pulls/${TRIGGERING_PR_NUMBER}")
 
-### Issue Detection Summary
+MERGED_BY=$(echo "$TRIGGERING_PR_DETAILS" | jq -r '.merged_by.login')
+TRIGGERING_PR_URL=$(echo "$TRIGGERING_PR_DETAILS" | jq -r '.html_url')
 
-The issue was detected manually when monitoring tools showed consistent CPU spikes for the log-relay service in the KR region. The elevated CPU usage was identified through the logs and performance dashboards in Grafana, specifically via metrics indicating higher-than-normal request handling times. These metrics flagged potential anomalies in the system, prompting immediate attention. However, automated alerts failed to capture the issue in a timely manner, which delayed incident acknowledgment. This gap highlighted deficiencies in existing alerting configurations for resource utilization thresholds.
+# Create the body for the PR with the decoration details
+PR_BODY="Updating the ${IMAGE_PATH} to ${IMAGE_TAG} version.
 
-### Remediation Actions
+**Details of the triggering PR in ${CURRENT_REPO}:**
+- **Merged By**: ${MERGED_BY}
+- **PR URL**: [${TRIGGERING_PR_URL}](${TRIGGERING_PR_URL})
 
-To address the issue, the Observability Engineering (OE) team took the following steps:
-1. **Redeployment of log-relay pods:** The team reduced the number of threads per pod to align with the minimum CPU allocation per container, ensuring stable and predictable performance.
-2. **Autoscaling enabled:** Dynamic autoscaling was configured for the log-relay service to accommodate varying loads without overburdening the system.
-3. **Traffic Limitation:** Measures were introduced to cap request usage at a sustainable level, preventing resource exhaustion under peak loads.
+Please review the changes."
 
-### Lessons Learned
-1. **Improved Alerting:** The incident exposed the need to refine alerting thresholds to proactively detect abnormal CPU usage and reduce dependency on manual detection methods.
-2. **Optimized Resource Management:** Proper allocation of threads and CPU limits is critical to maintaining predictable performance in containerized environments.
-3. **Load Testing:** Regular stress and load testing must be conducted to identify potential scalability issues and optimize autoscaling policies.
-4. **Automation for Consistency:** Relying on manual interventions delayed mitigation. Automating deployment configurations and updates can prevent similar incidents.
-5. **Cross-Service Dependency Checks:** High CPU usage in log-relay affected multiple systems. Establishing a robust dependency monitoring framework can better mitigate cascading impacts.
+# Create a PR in the target repository
+PR_API_RESPONSE_CODE=$(curl -o response.json -s -w "%{http_code}" -X POST \
+    -H "Authorization: token $SVC_GITHUB_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+          "title": "Updating the '"${IMAGE_PATH}"' to '"${IMAGE_TAG}"' version",
+          "body": "'"$PR_BODY"'",
+          "base": "master",
+          "head": "'"${SVC_GITHUB_ALIAS}:${BRANCH}"'"
+        }' "https://api.github.com/repos/${TARGET_REPO_OWNER}/${TARGET_REPO}/pulls")
 
-These lessons will be incorporated into operational workflows to enhance system reliability and performance.
+# Handle the API response
+if [ "$PR_API_RESPONSE_CODE" -lt 200 ] || [ "$PR_API_RESPONSE_CODE" -ge 300 ] && [ "$PR_API_RESPONSE_CODE" -ne 422 ]; then
+    echo "API request failed with status code $PR_API_RESPONSE_CODE"
+    cat response.json
+    exit 1
+fi
+
+if [ "$PR_API_RESPONSE_CODE" -eq 422 ]; then
+    ERROR_MESSAGE=$(cat response.json | jq -r '.errors[0].message')
+    echo "$ERROR_MESSAGE"
+    if [[ "$ERROR_MESSAGE" == *"A pull request already exists for"* ]]; then
+        echo "Pull request already exists"
+    else
+        echo "API request failed with status code $PR_API_RESPONSE_CODE"
+        exit 1
+    fi
+else
+    PR_URL=$(cat response.json | jq -r '.html_url')
+    echo "Pull request created successfully: $PR_URL"
+fi
