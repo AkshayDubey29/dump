@@ -1,22 +1,31 @@
-# Fetch details of the merged PR that triggered this job
-TRIGGERING_PR_NUMBER=$(curl -s -H "Authorization: token $SVC_GITHUB_TOKEN" \
-    "https://api.github.com/repos/${CURRENT_REPO_OWNER}/${CURRENT_REPO}/commits/${CIRCLE_SHA1}" | jq -r '.commit.message' | grep -oP '#\K\d+')
+# Debugging TRIGGERING_PR_DETAILS
+echo "Here=2"
+echo "TRIGGERING_PR_DETAILS:"
+echo "$TRIGGERING_PR_DETAILS"
 
-# Get details of the triggering PR
-TRIGGERING_PR_DETAILS=$(curl -s -H "Authorization: token $SVC_GITHUB_TOKEN" \
-    "https://api.github.com/repos/${CURRENT_REPO_OWNER}/${CURRENT_REPO}/pulls/${TRIGGERING_PR_NUMBER}")
-
+# Extract Merged By and PR URL
 MERGED_BY=$(echo "$TRIGGERING_PR_DETAILS" | jq -r '.merged_by.login')
-TRIGGERING_PR_URL=$(echo "$TRIGGERING_PR_DETAILS" | jq -r '.html_url')
+TRIGGERING_PR_URL=$(echo "$TRIGGERING_PR_DETAILS" | jq -r '.url')
+
+# Debug parsed values
+echo "Merged By: $MERGED_BY"
+echo "Triggering PR URL: $TRIGGERING_PR_URL"
 
 # Create the body for the PR with the decoration details
-PR_BODY="Updating the ${IMAGE_PATH} to ${IMAGE_TAG} version.
+PR_BODY=$(cat <<EOF
+Updating the ${IMAGE_PATH} to ${IMAGE_TAG} version.
 
 **Details of the triggering PR in ${CURRENT_REPO}:**
 - **Merged By**: ${MERGED_BY}
 - **PR URL**: [${TRIGGERING_PR_URL}](${TRIGGERING_PR_URL})
 
-Please review the changes."
+Please review the changes.
+EOF
+)
+
+# Debugging the constructed PR body
+echo "Constructed PR_BODY:"
+echo "$PR_BODY"
 
 # Create a PR in the target repository
 PR_API_RESPONSE_CODE=$(curl -o response.json -s -w "%{http_code}" -X POST \
@@ -27,7 +36,7 @@ PR_API_RESPONSE_CODE=$(curl -o response.json -s -w "%{http_code}" -X POST \
           "body": "'"$PR_BODY"'",
           "base": "master",
           "head": "'"${SVC_GITHUB_ALIAS}:${BRANCH}"'"
-        }' "https://api.github.com/repos/${TARGET_REPO_OWNER}/${TARGET_REPO}/pulls")
+        }' "https://github.coupang.net/api/v3/repos/coupang/coupang_deployment/pulls")
 
 # Handle the API response
 if [ "$PR_API_RESPONSE_CODE" -lt 200 ] || [ "$PR_API_RESPONSE_CODE" -ge 300 ] && [ "$PR_API_RESPONSE_CODE" -ne 422 ]; then
