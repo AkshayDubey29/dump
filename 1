@@ -1,74 +1,108 @@
-# Get the last tag or previous commit hash
-PREVIOUS_REF=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse HEAD~1)
+import pandas as pd
+from atlassian import Confluence
+import requests
+import datetime
+import logging
 
-# Debugging the previous reference
-echo "Previous Reference: $PREVIOUS_REF"
+# Configure logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Get the current commit hash or branch reference
-CURRENT_REF=$(git rev-parse HEAD)
+# VictorOps API and Wiki Details
+VICTOROPS_URL = "https://portal.victorops.com/api-reporting/v1/org/coupang/oncalluser/incidents_csv"
+API_PARAMS = {
+    'user': 'akdubey.coupang',
+    'team': 'team-E0JaM9bovUUBMaJY',
+    'startDate': None,
+    'endDate': None
+}
+CONFLUENCE_URL = "https://wiki.coupang.net"
+CONFLUENCE_USERNAME = "your_username"
+CONFLUENCE_TOKEN = "your_api_token"
+WIKI_SPACE = "MST"
+WIKI_PARENT_PAGE_TITLE = "Reports"
 
-# Debugging the current reference
-echo "Current Reference: $CURRENT_REF"
-
-# Fetch the commits between the previous and current refs
-CHANGELOG=$(git log $PREVIOUS_REF..$CURRENT_REF --pretty=format:"- %s (%an)" --no-merges)
-
-# Debugging the ChangeLog
-echo "Generated ChangeLog:"
-echo "$CHANGELOG"
-
-# Handle empty ChangeLog (in case there are no commits)
-if [ -z "$CHANGELOG" ]; then
-    CHANGELOG="No changes detected between $PREVIOUS_REF and $CURRENT_REF."
-fi
-
-# Create the PR body including the ChangeLog
-PR_BODY=$(cat <<EOF
-Updating the ${IMAGE_PATH} to ${IMAGE_TAG} version.
-
-**Details of the triggering PR in ${CURRENT_REPO}:**
-- **Merged By**: ${MERGED_BY}
-- **PR URL**: [${TRIGGERING_PR_URL}](${TRIGGERING_PR_URL})
-
-**ChangeLog:**
-$CHANGELOG
-
-Please review the changes.
-EOF
+# Confluence Initialization
+confluence = Confluence(
+    url=CONFLUENCE_URL,
+    username=CONFLUENCE_USERNAME,
+    password=CONFLUENCE_TOKEN
 )
 
-# Debugging the constructed PR_BODY
-echo "Constructed PR_BODY:"
-echo "$PR_BODY"
+# Helper functions
+def get_victorops_data(start_date, end_date):
+    """Fetch incidents from VictorOps as a CSV file."""
+    API_PARAMS['startDate'] = int(start_date.timestamp() * 1000)
+    API_PARAMS['endDate'] = int(end_date.timestamp() * 1000)
+    response = requests.get(VICTOROPS_URL, params=API_PARAMS)
+    response.raise_for_status()
+    return pd.read_csv(pd.compat.StringIO(response.text))
 
-# Create a PR in the target repository
-PR_API_RESPONSE_CODE=$(curl -o response.json -s -w "%{http_code}" -X POST \
-    -H "Authorization: token $SVC_GITHUB_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d '{
-          "title": "Updating the '"${IMAGE_PATH}"' to '"${IMAGE_TAG}"' version",
-          "body": "'"$PR_BODY"'",
-          "base": "master",
-          "head": "'"${SVC_GITHUB_ALIAS}:${BRANCH}"'"
-        }' "https://github.coupang.net/api/v3/repos/coupang/coupang_deployment/pulls")
+def process_incident_data(df):
+    """Process incident data to extract meaningful statistics."""
+    df['Date Time (UTC)'] = pd.to_datetime(df['Date Time (UTC)'])
+    repeated_alerts = df['Event'].value_counts().reset_index()
+    repeated_alerts.columns = ['Event', 'Count']
+    unique_alerts = df['Event'].nunique()
+    user_acknowledgement = df.groupby(['User'])['Incident'].count().reset_index()
+    user_acknowledgement.columns = ['User', 'Ticket Count']
+    return repeated_alerts, unique_alerts, user_acknowledgement
 
-# Handle the API response
-if [ "$PR_API_RESPONSE_CODE" -lt 200 ] || [ "$PR_API_RESPONSE_CODE" -ge 300 ] && [ "$PR_API_RESPONSE_CODE" -ne 422 ]; then
-    echo "API request failed with status code $PR_API_RESPONSE_CODE"
-    cat response.json
-    exit 1
-fi
+def create_confluence_page(parent_page_id, title, content):
+    """Create a new child page in Confluence."""
+    try:
+        confluence.create_page(
+            space=WIKI_SPACE,
+            title=title,
+            body=content,
+            parent_id=parent_page_id
+        )
+        logger.info(f"Successfully created page: {title}")
+    except Exception as e:
+        logger.error(f"Failed to create page: {e}")
 
-if [ "$PR_API_RESPONSE_CODE" -eq 422 ]; then
-    ERROR_MESSAGE=$(cat response.json | jq -r '.errors[0].message')
-    echo "$ERROR_MESSAGE"
-    if [[ "$ERROR_MESSAGE" == *"A pull request already exists for"* ]]; then
-        echo "Pull request already exists"
-    else
-        echo "API request failed with status code $PR_API_RESPONSE_CODE"
-        exit 1
-    fi
-else
-    PR_URL=$(cat response.json | jq -r '.html_url')
-    echo "Pull request created successfully: $PR_URL"
-fi
+def generate_weekly_report():
+    """Main function to generate and publish the weekly report."""
+    today = datetime.date.today()
+    last_monday = today - datetime.timedelta(days=today.weekday())
+    last_sunday = last_monday - datetime.timedelta(days=1)
+    start_date = last_sunday - datetime.timedelta(days=6)
+    end_date = last_sunday
+
+    # Fetch data
+    incidents = get_victorops_data(start_date, end_date)
+
+    # Process data
+    repeated_alerts, unique_alerts, user_acknowledgement = process_incident_data(incidents)
+
+    # Generate Confluence content
+    content = f"""
+    <h1>Weekly Report: {start_date} to {end_date}</h1>
+    <h2>Overview</h2>
+    <p>Total Incidents: {len(incidents)}</p>
+    <p>Unique Alerts: {unique_alerts}</p>
+    
+    <h2>Repeated Alerts</h2>
+    {repeated_alerts.to_html(index=False, escape=False)}
+    
+    <h2>User Acknowledgements</h2>
+    {user_acknowledgement.to_html(index=False, escape=False)}
+    
+    <h2>All Incidents</h2>
+    {incidents.to_html(index=False, escape=False)}
+    """
+
+    # Find parent page ID
+    parent_page = confluence.get_page_by_title(WIKI_SPACE, WIKI_PARENT_PAGE_TITLE)
+    if not parent_page:
+        logger.error("Parent page not found.")
+        return
+    parent_page_id = parent_page['id']
+
+    # Create child page
+    report_title = f"Weekly Report: {start_date} to {end_date}"
+    create_confluence_page(parent_page_id, report_title, content)
+
+# Run the script
+if __name__ == "__main__":
+    generate_weekly_report()
