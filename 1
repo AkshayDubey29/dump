@@ -1,30 +1,37 @@
-def fetch_victorops_incidents(date_begin, date_end, routing_key, limit=100):
-    """Fetch incidents from VictorOps API."""
-    url = f"{VICTOROPS_URL}?startedAfter={date_begin}&startedBefore={date_end}&routingKey={routing_key}&limit={limit}"
-    headers = {
-        'X-VO-Api-Id': API_HEADERS['X-VO-Api-Id'],
-        'X-VO-Api-Key': API_HEADERS['X-VO-Api-Key']
-    }
-    
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch data: {response.status_code}, {response.text}")
-        return None
+def generate_graph(df):
+    """Generate trend graph and return as HTML img tag."""
     try:
-        return response.json()
-    except ValueError as e:
-        logger.error(f"Failed to parse response JSON: {e}")
-        return None
+        # Check if the DataFrame is empty
+        if df.empty or 'Start Time' not in df.columns:
+            logger.error("DataFrame is empty or missing 'Start Time' column. Cannot generate graph.")
+            return "<p>No data available to generate the graph.</p>"
 
+        # Ensure 'Start Time' is in datetime format
+        if not pd.api.types.is_datetime64_any_dtype(df['Start Time']):
+            df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
 
+        # Drop rows where 'Start Time' is NaT
+        df = df.dropna(subset=['Start Time'])
 
-# Convert start_date and end_date to ISO8601 format with timezone information
-start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
-end_date_iso = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+        # Group data by Start Time for trend analysis
+        plt.figure(figsize=(10, 5))
+        df['Start Time'].dt.floor('H').value_counts().sort_index().plot(
+            kind='line', title='Incidents Over Time'
+        )
+        plt.xlabel('Time')
+        plt.ylabel('Number of Incidents')
 
-# Fetch incidents
-incidents_data = fetch_victorops_incidents(
-    date_begin=start_date_iso,
-    date_end=end_date_iso,
-    routing_key='observability-engineering'
-)
+        # Save graph to a buffer
+        buffer = BytesIO()
+        plt.savefig(buffer, format="png")
+        buffer.seek(0)
+
+        # Encode image in Base64 for embedding
+        image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+        buffer.close()
+        plt.close()
+        
+        return f'<img src="data:image/png;base64,{image_base64}" />'
+    except Exception as e:
+        logger.error(f"Failed to generate graph: {e}")
+        return "<p>Error generating graph.</p>"
