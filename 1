@@ -1,10 +1,12 @@
-def generate_graph(df):
-    """Generate trend graph and return as HTML img tag."""
+import os  # For file deletion
+
+def generate_graph(df, filename="trend_graph.png"):
+    """Generate trend graph, save it locally, and return the file name."""
     try:
         # Check if the DataFrame is empty
         if df.empty or 'Start Time' not in df.columns:
             logger.error("DataFrame is empty or missing 'Start Time' column. Cannot generate graph.")
-            return "<p>No data available to generate the graph.</p>"
+            return None
 
         # Ensure 'Start Time' is in datetime format
         if not pd.api.types.is_datetime64_any_dtype(df['Start Time']):
@@ -14,24 +16,113 @@ def generate_graph(df):
         df = df.dropna(subset=['Start Time'])
 
         # Group data by Start Time for trend analysis
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(6, 3))
         df['Start Time'].dt.floor('H').value_counts().sort_index().plot(
             kind='line', title='Incidents Over Time'
         )
         plt.xlabel('Time')
         plt.ylabel('Number of Incidents')
 
-        # Save graph to a buffer
-        buffer = BytesIO()
-        plt.savefig(buffer, format="png")
-        buffer.seek(0)
-
-        # Encode image in Base64 for embedding
-        image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-        buffer.close()
+        # Save graph locally
+        plt.savefig(filename, format="png", bbox_inches="tight")
+        logger.info(f"Graph saved locally as '{filename}'")
         plt.close()
-        
-        return f'<img src="data:image/png;base64,{image_base64}" />'
+
+        return filename
     except Exception as e:
         logger.error(f"Failed to generate graph: {e}")
-        return "<p>Error generating graph.</p>"
+        return None
+
+
+def upload_image_to_confluence(page_id, filename):
+    """Upload an image file to a Confluence page."""
+    try:
+        with open(filename, 'rb') as file:
+            response = confluence.attach_file(
+                filename=filename,
+                page_id=page_id,
+                file=file
+            )
+        logger.info(f"Uploaded image '{filename}' to page ID {page_id}.")
+        return response
+    except Exception as e:
+        logger.error(f"Failed to upload image '{filename}' to Confluence: {e}")
+        return None
+
+
+def generate_weekly_report():
+    """Generate and publish the weekly report."""
+    today = datetime.date.today()
+    last_monday = today - datetime.timedelta(days=today.weekday())
+    last_sunday = last_monday - datetime.timedelta(days=1)
+    start_date = last_sunday - datetime.timedelta(days=6)
+    end_date = last_sunday
+
+    # Fetch incidents
+    incidents_data = fetch_victorops_incidents(
+        date_begin=start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        date_end=end_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        routing_key='observability-engineering'
+    )
+    if not incidents_data:
+        logger.error("Failed to fetch incidents data.")
+        return
+
+    # Process incidents
+    incidents_df, mttr, mttd, alert_count, unique_alerts, repeated_alerts = process_incident_data(incidents_data)
+
+    # Generate graph and save locally
+    graph_filename = generate_graph(incidents_df)
+    if not graph_filename:
+        logger.error("Graph generation failed. Skipping upload.")
+        return
+
+    # Find parent page ID
+    response = confluence.get_page_by_title(space="MST", title="Reports", start=0, limit=1)
+    if not response or 'id' not in response:
+        logger.error("Failed to find parent page ID.")
+        return
+    parent_page_id = response['id']
+
+    # Upload graph to Confluence
+    upload_response = upload_image_to_confluence(page_id=parent_page_id, filename=graph_filename)
+    if not upload_response:
+        logger.error("Image upload to Confluence failed.")
+        return
+
+    # Delete the local file
+    try:
+        os.remove(graph_filename)
+        logger.info(f"Deleted local file '{graph_filename}'")
+    except OSError as e:
+        logger.error(f"Error deleting file '{graph_filename}': {e}")
+
+    # Prepare Confluence content
+    content = f"""
+    <h1>Weekly Report: {start_date} to {end_date}</h1>
+    <h2>Overview</h2>
+    <p>Total Incidents: {alert_count}</p>
+    <p>Unique Alerts: {unique_alerts}</p>
+    <p>MTTR (Mean Time to Resolve): {mttr:.2f} minutes</p>
+    <p>MTTD (Mean Time to Detect): {mttd:.2f} minutes</p>
+
+    <h2>Trend Analysis</h2>
+    <p>The trend graph has been uploaded as an attachment to this page.</p>
+
+    <h2>Repeated Alerts</h2>
+    {repeated_alerts.to_html(index=False, escape=False)}
+
+    <h2>User Acknowledgements</h2>
+    {user_acknowledgement.to_html(index=False, escape=False)}
+
+    <h2>Detailed Incidents</h2>
+    {incidents_df.to_html(index=False, escape=False)}
+    """
+
+    # Create child page
+    report_title = f"Weekly Report: {start_date} to {end_date}"
+    create_confluence_page(parent_page_id, report_title, content)
+
+# Run the script
+if __name__ == "__main__":
+    generate_weekly_report()
