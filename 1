@@ -1,115 +1,17 @@
-def process_incident_data(incidents):
-    """Process incidents to calculate MTTR, MTTD, and other metrics."""
-    data = []
-    for incident in incidents['incidents']:
-        # Extract transitions and validate timestamps
-        transitions = {t['name']: t.get('at', '') for t in incident['transitions']}
-        start_time = None
-        end_time = None
-        ack_time = None
-
-        # Parse timestamps safely
-        if transitions.get('triggered'):
-            try:
-                start_time = parse(transitions['triggered'])
-            except Exception as e:
-                logger.warning(f"Invalid triggered timestamp: {transitions['triggered']} - {e}")
-        
-        if transitions.get('resolved'):
-            try:
-                end_time = parse(transitions['resolved'])
-            except Exception as e:
-                logger.warning(f"Invalid resolved timestamp: {transitions['resolved']} - {e}")
-        
-        if transitions.get('acknowledged'):
-            try:
-                ack_time = parse(transitions['acknowledged'])
-            except Exception as e:
-                logger.warning(f"Invalid acknowledged timestamp: {transitions['acknowledged']} - {e}")
-
-        # Calculate durations only if timestamps are valid
-        duration = (end_time - start_time).total_seconds() / 60 if end_time and start_time else None
-        detect_time = (ack_time - start_time).total_seconds() / 60 if ack_time and start_time else None
-
-        data.append({
-            "Incident ID": incident.get('incidentNumber', 'Unknown'),
-            "Start Time": start_time,
-            "End Time": end_time,
-            "Duration (minutes)": duration,
-            "Detection Time (minutes)": detect_time,
-            "Current Phase": incident.get('currentPhase', 'Unknown'),
-            "Entity Display Name": incident.get('entityDisplayName', 'Unknown'),
-            "User Acknowledged": incident.get('pagedUsers', [])[0] if incident.get('pagedUsers') else "System"
-        })
-
-    # Convert to DataFrame
-    df = pd.DataFrame(data)
-    mttr = df["Duration (minutes)"].mean() if not df.empty else None  # Mean Time to Resolve
-    mttd = df["Detection Time (minutes)"].mean() if not df.empty else None  # Mean Time to Detect
-    unique_alerts = df["Entity Display Name"].nunique() if not df.empty else 0
-    repeated_alerts = df["Entity Display Name"].value_counts().reset_index()
-    repeated_alerts.columns = ["Event", "Count"]
-    alert_count = len(incidents['incidents']) if 'incidents' in incidents else 0
-    return df, mttr, mttd, alert_count, unique_alerts, repeated_alerts
-
-
-def generate_weekly_report():
-    """Generate and publish the weekly report."""
-    today = datetime.date.today()
-    last_monday = today - datetime.timedelta(days=today.weekday())
-    last_sunday = last_monday - datetime.timedelta(days=1)
-    start_date = last_sunday - datetime.timedelta(days=6)
-    end_date = last_sunday
-
-    # Fetch incidents
-    incidents_data = fetch_victorops_incidents(
-        start_date=start_date.isoformat(),
-        end_date=end_date.isoformat(),
-        routing_key='observability-engineering'
-    )
-    if not incidents_data:
-        logger.error("Failed to fetch incidents data.")
-        return
-
-    # Process incidents
-    incidents_df, mttr, mttd, alert_count, unique_alerts, repeated_alerts = process_incident_data(incidents_data)
-
-    # Generate graph
-    trend_graph = generate_graph(incidents_df)
-
-    # Prepare Confluence content
-    content = f"""
-    <h1>Weekly Report: {start_date} to {end_date}</h1>
-    <h2>Overview</h2>
-    <p>Total Incidents: {alert_count}</p>
-    <p>Unique Alerts: {unique_alerts}</p>
-    <p>MTTR (Mean Time to Resolve): {mttr:.2f} minutes</p>
-    <p>MTTD (Mean Time to Detect): {mttd:.2f} minutes</p>
-
-    <h2>Trend Analysis</h2>
-    {trend_graph}
-
-    <h2>Repeated Alerts</h2>
-    {repeated_alerts.to_html(index=False, escape=False)}
-
-    <h2>User Acknowledgements</h2>
-    {user_acknowledgement.to_html(index=False, escape=False)}
-
-    <h2>All Incidents</h2>
-    {incidents_df.to_html(index=False, escape=False)}
-    """
-
-    # Find parent page ID
-    parent_page = confluence.get_page_by_title(WIKI_SPACE, WIKI_PARENT_PAGE_TITLE)
-    if not parent_page:
-        logger.error("Parent page not found.")
-        return
-    parent_page_id = parent_page['id']
-
-    # Create child page
-    report_title = f"Weekly Report: {start_date} to {end_date}"
-    create_confluence_page(parent_page_id, report_title, content)
-
-# Run the script
-if __name__ == "__main__":
-    generate_weekly_report()
+def fetch_victorops_incidents(date_begin, date_end, routing_key, limit=100):
+    """Fetch incidents from VictorOps API."""
+    url = f"{VICTOROPS_URL}?startedAfter={date_begin}&startedBefore={date_end}&routingKey={routing_key}&limit={limit}"
+    headers = {
+        'X-VO-Api-Id': API_HEADERS['X-VO-Api-Id'],
+        'X-VO-Api-Key': API_HEADERS['X-VO-Api-Key']
+    }
+    
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        logger.error(f"Failed to fetch data: {response.status_code}, {response.text}")
+        return None
+    try:
+        return response.json()
+    except ValueError as e:
+        logger.error(f"Failed to parse response JSON: {e}")
+        return None
