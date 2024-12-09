@@ -2,27 +2,41 @@ def process_incident_data(incidents):
     """Process incidents to calculate MTTR, MTTD, and other metrics."""
     data = []
     for incident in incidents['incidents']:
-        transitions = {t['name']: t['at'] for t in incident['transitions']}
-        start_time = parse(transitions.get('triggered', ''))
-        end_time = parse(transitions.get('resolved', ''))
-        ack_time = parse(transitions.get('acknowledged', ''))
+        transitions = {t['name']: t.get('at', '') for t in incident['transitions']}
+        
+        # Safely parse timestamps, default to None if invalid
+        try:
+            start_time = parse(transitions.get('triggered', '')) if transitions.get('triggered') else None
+        except Exception:
+            start_time = None
+        
+        try:
+            end_time = parse(transitions.get('resolved', '')) if transitions.get('resolved') else None
+        except Exception:
+            end_time = None
+        
+        try:
+            ack_time = parse(transitions.get('acknowledged', '')) if transitions.get('acknowledged') else None
+        except Exception:
+            ack_time = None
 
-        duration = (end_time - start_time).total_seconds() / 60 if end_time > start_time else None
-        detect_time = (ack_time - start_time).total_seconds() / 60 if ack_time > start_time else None
+        # Calculate durations only if valid timestamps are present
+        duration = (end_time - start_time).total_seconds() / 60 if end_time and start_time else None
+        detect_time = (ack_time - start_time).total_seconds() / 60 if ack_time and start_time else None
 
         data.append({
-            "Incident ID": incident['incidentNumber'],
+            "Incident ID": incident.get('incidentNumber', 'Unknown'),
             "Start Time": start_time,
             "End Time": end_time,
             "Duration (minutes)": duration,
             "Detection Time (minutes)": detect_time,
-            "Current Phase": incident['currentPhase'],
-            "Entity Display Name": incident['entityDisplayName'],
-            "User Acknowledged": incident['pagedUsers'][0] if incident['pagedUsers'] else "System"
+            "Current Phase": incident.get('currentPhase', 'Unknown'),
+            "Entity Display Name": incident.get('entityDisplayName', 'Unknown'),
+            "User Acknowledged": incident.get('pagedUsers', [])[0] if incident.get('pagedUsers') else "System"
         })
 
     df = pd.DataFrame(data)
-    mttr = df["Duration (minutes)"].mean()  # Mean Time to Resolve
-    mttd = df["Detection Time (minutes)"].mean()  # Mean Time to Detect
-    alert_count = len(incidents['incidents'])
+    mttr = df["Duration (minutes)"].mean() if not df.empty else None  # Mean Time to Resolve
+    mttd = df["Detection Time (minutes)"].mean() if not df.empty else None  # Mean Time to Detect
+    alert_count = len(incidents['incidents']) if 'incidents' in incidents else 0
     return df, mttr, mttd, alert_count
