@@ -15,3 +15,16 @@ def fetch_victorops_incidents(date_begin, date_end, routing_key, limit=100):
     except ValueError as e:
         logger.error(f"Failed to parse response JSON: {e}")
         return None
+
+
+
+# Convert start_date and end_date to ISO8601 format with timezone information
+start_date_iso = start_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+end_date_iso = end_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+# Fetch incidents
+incidents_data = fetch_victorops_incidents(
+    date_begin=start_date_iso,
+    date_end=end_date_iso,
+    routing_key='observability-engineering'
+)
