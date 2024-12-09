@@ -1,53 +1,11 @@
-import pandas as pd
-from atlassian import Confluence
-import requests
-import datetime
-import matplotlib.pyplot as plt
-from io import BytesIO
-import base64
-import logging
-
-# Configure logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# VictorOps API and Wiki Details
-VICTOROPS_URL = "https://api.victorops.com/api-reporting/v2/incidents"
-API_HEADERS = {
-    'X-VO-Api-Id': '58ada487',
-    'X-VO-Api-Key': 'a8de9acf6df4f17e8e246891d8194a8'
-}
-CONFLUENCE_URL = "https://wiki.coupang.net"
-CONFLUENCE_USERNAME = "akdubey"
-CONFLUENCE_API_TOKEN = "T4RqZGEJ@0608"
-WIKI_SPACE = "MST"
-WIKI_PARENT_PAGE_TITLE = "Temp"
-
-# Confluence Initialization
-confluence = Confluence(
-    url=CONFLUENCE_URL,
-    username=CONFLUENCE_USERNAME,
-    token=CONFLUENCE_API_TOKEN
-)
-
-# Helper functions
-def fetch_victorops_incidents(start_date, end_date, routing_key, limit=100):
-    """Fetch incidents from VictorOps API."""
-    url = f"{VICTOROPS_URL}?startedAfter={start_date}&startedBefore={end_date}&routingKey={routing_key}&limit={limit}"
-    response = requests.get(url, headers=API_HEADERS)
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch data: {response.status_code}, {response.text}")
-        return None
-    return response.json()
-
 def process_incident_data(incidents):
     """Process incidents to calculate MTTR, MTTD, and other metrics."""
     data = []
     for incident in incidents['incidents']:
         transitions = {t['name']: t['at'] for t in incident['transitions']}
-        start_time = datetime.datetime.fromisoformat(transitions.get('triggered', ''))
-        end_time = datetime.datetime.fromisoformat(transitions.get('resolved', ''))
-        ack_time = datetime.datetime.fromisoformat(transitions.get('acknowledged', ''))
+        start_time = parse(transitions.get('triggered', ''))
+        end_time = parse(transitions.get('resolved', ''))
+        ack_time = parse(transitions.get('acknowledged', ''))
 
         duration = (end_time - start_time).total_seconds() / 60 if end_time > start_time else None
         detect_time = (ack_time - start_time).total_seconds() / 60 if ack_time > start_time else None
@@ -68,84 +26,3 @@ def process_incident_data(incidents):
     mttd = df["Detection Time (minutes)"].mean()  # Mean Time to Detect
     alert_count = len(incidents['incidents'])
     return df, mttr, mttd, alert_count
-
-def generate_graph(df):
-    """Generate trend graph and return as HTML img tag."""
-    plt.figure(figsize=(10, 5))
-    df['Start Time'].value_counts().sort_index().plot(kind='line', title='Incidents Over Time')
-    plt.xlabel('Time')
-    plt.ylabel('Number of Incidents')
-    buffer = BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-    buffer.close()
-    plt.close()
-    return f'<img src="data:image/png;base64,{image_base64}" />'
-
-def create_confluence_page(parent_page_id, title, content):
-    """Create a new child page in Confluence."""
-    try:
-        confluence.create_page(
-            space=WIKI_SPACE,
-            title=title,
-            body=content,
-            parent_id=parent_page_id
-        )
-        logger.info(f"Successfully created page: {title}")
-    except Exception as e:
-        logger.error(f"Failed to create page: {e}")
-
-def generate_weekly_report():
-    """Generate and publish the weekly report."""
-    today = datetime.date.today()
-    last_monday = today - datetime.timedelta(days=today.weekday())
-    last_sunday = last_monday - datetime.timedelta(days=1)
-    start_date = last_sunday - datetime.timedelta(days=6)
-    end_date = last_sunday
-
-    # Fetch incidents
-    incidents_data = fetch_victorops_incidents(
-        start_date=start_date.isoformat(),
-        end_date=end_date.isoformat(),
-        routing_key='observability-engineering'
-    )
-    if not incidents_data:
-        logger.error("Failed to fetch incidents data.")
-        return
-
-    # Process incidents
-    incidents_df, mttr, mttd, alert_count = process_incident_data(incidents_data)
-
-    # Generate graph
-    trend_graph = generate_graph(incidents_df)
-
-    # Prepare Confluence content
-    content = f"""
-    <h1>Weekly Report: {start_date} to {end_date}</h1>
-    <h2>Overview</h2>
-    <p>Total Alerts: {alert_count}</p>
-    <p>MTTR (Mean Time to Resolve): {mttr:.2f} minutes</p>
-    <p>MTTD (Mean Time to Detect): {mttd:.2f} minutes</p>
-
-    <h2>Trend Analysis</h2>
-    {trend_graph}
-
-    <h2>Detailed Incidents</h2>
-    {incidents_df.to_html(index=False, escape=False)}
-    """
-
-    # Find parent page ID
-    parent_page = confluence.get_page_by_title(WIKI_SPACE, WIKI_PARENT_PAGE_TITLE)
-    if not parent_page:
-        logger.error("Parent page not found.")
-        return
-    parent_page_id = parent_page['id']
-
-    # Create child page
-    report_title = f"Weekly Report: {start_date} to {end_date}"
-    create_confluence_page(parent_page_id, report_title, content)
-
-# Run the script
-if __name__ == "__main__":
-    generate_weekly_report()
