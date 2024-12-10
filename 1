@@ -1,128 +1,193 @@
-import os  # For file deletion
+#!/bin/bash
 
-def generate_graph(df, filename="trend_graph.png"):
-    """Generate trend graph, save it locally, and return the file name."""
-    try:
-        # Check if the DataFrame is empty
-        if df.empty or 'Start Time' not in df.columns:
-            logger.error("DataFrame is empty or missing 'Start Time' column. Cannot generate graph.")
-            return None
+# Exit immediately if a command exits with a non-zero status
+set -e
 
-        # Ensure 'Start Time' is in datetime format
-        if not pd.api.types.is_datetime64_any_dtype(df['Start Time']):
-            df['Start Time'] = pd.to_datetime(df['Start Time'], errors='coerce')
+# Define project name
+PROJECT_NAME="observability-bot"
 
-        # Drop rows where 'Start Time' is NaT
-        df = df.dropna(subset=['Start Time'])
+# Step 1: Create Folder Structure
+echo "Creating folder structure for the project..."
+mkdir -p $PROJECT_NAME/backend
+mkdir -p $PROJECT_NAME/frontend
+mkdir -p $PROJECT_NAME/models
 
-        # Group data by Start Time for trend analysis
-        plt.figure(figsize=(6, 3))
-        df['Start Time'].dt.floor('H').value_counts().sort_index().plot(
-            kind='line', title='Incidents Over Time'
-        )
-        plt.xlabel('Time')
-        plt.ylabel('Number of Incidents')
+# Step 2: Create Boilerplate Files
+echo "Creating boilerplate files..."
 
-        # Save graph locally
-        plt.savefig(filename, format="png", bbox_inches="tight")
-        logger.info(f"Graph saved locally as '{filename}'")
-        plt.close()
+# Backend Files
+cat <<EOF > $PROJECT_NAME/backend/main.py
+from fastapi import FastAPI
+from backend.database import initialize_db, get_connection
+from backend.gpt_model import generate_answer
+from backend.confluence_sync import sync_confluence_to_db
 
-        return filename
-    except Exception as e:
-        logger.error(f"Failed to generate graph: {e}")
-        return None
+app = FastAPI()
 
+@app.on_event("startup")
+def startup_event():
+    initialize_db()
 
-def upload_image_to_confluence(page_id, filename):
-    """Upload an image file to a Confluence page."""
-    try:
-        with open(filename, 'rb') as file:
-            response = confluence.attach_file(
-                filename=filename,
-                page_id=page_id,
-                file=file
-            )
-        logger.info(f"Uploaded image '{filename}' to page ID {page_id}.")
-        return response
-    except Exception as e:
-        logger.error(f"Failed to upload image '{filename}' to Confluence: {e}")
-        return None
+@app.get("/ask")
+def ask_question(query: str):
+    conn = get_connection()
+    cursor = conn.cursor()
 
+    cursor.execute("""
+        SELECT title, content
+        FROM wiki_content
+        WHERE content ILIKE %s
+        LIMIT 5;
+    """, (f"%{query}%",))
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
 
-def generate_weekly_report():
-    """Generate and publish the weekly report."""
-    today = datetime.date.today()
-    last_monday = today - datetime.timedelta(days=today.weekday())
-    last_sunday = last_monday - datetime.timedelta(days=1)
-    start_date = last_sunday - datetime.timedelta(days=6)
-    end_date = last_sunday
+    if not results:
+        return {"answer": "No relevant information found in the Wiki."}
 
-    # Fetch incidents
-    incidents_data = fetch_victorops_incidents(
-        date_begin=start_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        date_end=end_date.strftime('%Y-%m-%dT%H:%M:%SZ'),
-        routing_key='observability-engineering'
+    context = "\n\n".join([row[1] for row in results])
+    answer = generate_answer(query, context)
+    return {"answer": answer}
+EOF
+
+cat <<EOF > $PROJECT_NAME/backend/database.py
+import psycopg2
+
+DB_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "database": "observability_faq",
+    "user": "admin",
+    "password": "admin123"
+}
+
+def get_connection():
+    return psycopg2.connect(**DB_CONFIG)
+
+def initialize_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS wiki_content (
+            id SERIAL PRIMARY KEY,
+            page_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    cursor.close()
+    conn.close()
+EOF
+
+cat <<EOF > $PROJECT_NAME/backend/confluence_sync.py
+from atlassian import Confluence
+from backend.database import get_connection
+
+CONFLEUNCE_URL = "https://wiki.coupang.net/"
+CONFLUENCE_USERNAME = "akdubey"
+CONFLUENCE_API_TOKEN = "abcdefgh123"
+WIKI_SPACE = "MST"
+
+confluence = Confluence(
+    url=CONFLEUNCE_URL,
+    username=CONFLUENCE_USERNAME,
+    token=CONFLUENCE_API_TOKEN
+)
+
+def sync_confluence_to_db():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    pages = confluence.get_all_pages_from_space(
+        space=WIKI_SPACE, start=0, limit=100, expand="body.storage"
     )
-    if not incidents_data:
-        logger.error("Failed to fetch incidents data.")
-        return
+    for page in pages:
+        page_id = page["id"]
+        title = page["title"]
+        content = confluence.get_page_by_id(page_id, expand="body.storage")["body"]["storage"]["value"]
 
-    # Process incidents
-    incidents_df, mttr, mttd, alert_count, unique_alerts, repeated_alerts = process_incident_data(incidents_data)
+        cursor.execute("""
+            INSERT INTO wiki_content (page_id, title, content)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (page_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                content = EXCLUDED.content;
+        """, (page_id, title, content))
+    conn.commit()
+    cursor.close()
+    conn.close()
+EOF
 
-    # Generate graph and save locally
-    graph_filename = generate_graph(incidents_df)
-    if not graph_filename:
-        logger.error("Graph generation failed. Skipping upload.")
-        return
+cat <<EOF > $PROJECT_NAME/backend/gpt_model.py
+from transformers import pipeline
 
-    # Find parent page ID
-    response = confluence.get_page_by_title(space="MST", title="Reports", start=0, limit=1)
-    if not response or 'id' not in response:
-        logger.error("Failed to find parent page ID.")
-        return
-    parent_page_id = response['id']
+qa_pipeline = pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
 
-    # Upload graph to Confluence
-    upload_response = upload_image_to_confluence(page_id=parent_page_id, filename=graph_filename)
-    if not upload_response:
-        logger.error("Image upload to Confluence failed.")
-        return
+def generate_answer(question, context):
+    response = qa_pipeline(question=question, context=context)
+    return response["answer"]
+EOF
 
-    # Delete the local file
-    try:
-        os.remove(graph_filename)
-        logger.info(f"Deleted local file '{graph_filename}'")
-    except OSError as e:
-        logger.error(f"Error deleting file '{graph_filename}': {e}")
+# Frontend Files
+cat <<EOF > $PROJECT_NAME/frontend/index.html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Observability FAQ Bot</title>
+</head>
+<body>
+    <h1>Observability FAQ Bot</h1>
+    <div id="chatbox"></div>
+    <input type="text" id="query" placeholder="Ask a question..." />
+    <button onclick="askQuestion()">Ask</button>
 
-    # Prepare Confluence content
-    content = f"""
-    <h1>Weekly Report: {start_date} to {end_date}</h1>
-    <h2>Overview</h2>
-    <p>Total Incidents: {alert_count}</p>
-    <p>Unique Alerts: {unique_alerts}</p>
-    <p>MTTR (Mean Time to Resolve): {mttr:.2f} minutes</p>
-    <p>MTTD (Mean Time to Detect): {mttd:.2f} minutes</p>
+    <script src="app.js"></script>
+</body>
+</html>
+EOF
 
-    <h2>Trend Analysis</h2>
-    <p>The trend graph has been uploaded as an attachment to this page.</p>
+cat <<EOF > $PROJECT_NAME/frontend/app.js
+async function askQuestion() {
+    const query = document.getElementById("query").value;
+    const response = await fetch(\`http://127.0.0.1:8000/ask?query=\${encodeURIComponent(query)}\`);
+    const data = await response.json();
 
-    <h2>Repeated Alerts</h2>
-    {repeated_alerts.to_html(index=False, escape=False)}
+    const chatbox = document.getElementById("chatbox");
+    chatbox.innerHTML += \`<p><strong>User:</strong> \${query}</p>\`;
+    chatbox.innerHTML += \`<p><strong>Bot:</strong> \${data.answer}</p>\`;
+}
+EOF
 
-    <h2>User Acknowledgements</h2>
-    {user_acknowledgement.to_html(index=False, escape=False)}
+# Docker Compose File for PostgreSQL
+cat <<EOF > $PROJECT_NAME/docker-compose.yml
+version: '3.8'
 
-    <h2>Detailed Incidents</h2>
-    {incidents_df.to_html(index=False, escape=False)}
-    """
+services:
+  postgres:
+    image: postgres
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: observability_faq
+    ports:
+      - "5432:5432"
+EOF
 
-    # Create child page
-    report_title = f"Weekly Report: {start_date} to {end_date}"
-    create_confluence_page(parent_page_id, report_title, content)
+# Requirements File
+cat <<EOF > $PROJECT_NAME/requirements.txt
+fastapi
+uvicorn
+psycopg2-binary
+atlassian-python-api
+transformers
+EOF
 
-# Run the script
-if __name__ == "__main__":
-    generate_weekly_report()
+# Step 3: Download and Configure NLP Model
+echo "Downloading and configuring NLP models..."
+python3 -m pip install -r $PROJECT_NAME/requirements.txt
+python3 -c "from transformers import pipeline; pipeline('question-answering', model='distilbert-base-cased-distilled-squad')"
+
+echo "Setup complete. Navigate to $PROJECT_NAME and start developing!"
