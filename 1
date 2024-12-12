@@ -1,49 +1,40 @@
-# Requirements File
-cat <<EOF > requirements.txt
-fastapi
-uvicorn
-psycopg2-binary
-atlassian-python-api
-transformers
-EOF
+### Exception Request Details:
 
-# Step 4: Install Dependencies
-echo "Installing dependencies in virtual environment..."
-pip install --upgrade pip
-pip install -r requirements.txt
+1. **Summary**  
+   Request for an exception to use the `prometheus-nginxlog-exporter:v1.10.0` image, which is currently running on a non-CIA-based image. This exception is required to avoid risks and delays associated with migrating to a CIA-based Golang image due to unresolved upstream issues.
 
-# Install PyTorch
-echo "Installing PyTorch..."
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+2. **Component**  
+   Prometheus-nginxlog-exporter container.
 
-# Verify PyTorch Installation
-if python -c "import torch; print(torch.__version__)" >/dev/null 2>&1; then
-    echo "PyTorch installed successfully."
-else
-    echo "PyTorch installation failed. Installing TensorFlow as a fallback..."
-    pip install tensorflow
-fi
+3. **Organization**  
+   Observability Engineering Team, Coupang.
 
-# Verify TensorFlow Installation (Fallback)
-if python -c "import tensorflow as tf; print(tf.__version__)" >/dev/null 2>&1; then
-    echo "TensorFlow installed successfully."
-else
-    echo "TensorFlow installation also failed. Exiting."
-    exit 1
-fi
+4. **Compensating Control**  
+   - Use a CIA-provided Golang base image and internally build the container by copying the binary.  
+   - Regularly monitor the upstream repository for updates.  
+   - Conduct periodic vulnerability scans on the existing image.
 
-# Step 5: Download and Configure NLP Model
-echo "Downloading and configuring NLP model..."
-python -c "
-try:
-    from transformers import pipeline
-    pipeline('question-answering', model='distilbert-base-cased-distilled-squad')
-    print('NLP Model configured successfully.')
-except Exception as e:
-    print(f'Failed to configure NLP model: {e}')
-    exit(1)
-"
+5. **Expiry Date**  
+   Specify a reasonable timeframe, e.g., 6-12 months, to review the migration feasibility or until the upstream project receives an update.
 
-# Step 6: Finalizing Setup
-echo "Setup complete. Navigate to the '$PROJECT_NAME' directory, activate the virtual environment, and start developing!"
-echo "To activate the virtual environment, run: source $VENV_NAME/bin/activate"
+6. **Impacted Application**  
+   Metrics collection and monitoring using Prometheus via the nginxlog-exporter.
+
+7. **Business Justification**  
+   - The upstream project has not been updated in over a year, making migration to a CIA-based image infeasible at this time.  
+   - Rebuilding the image internally will introduce risks to core functionalities and require significant development time.  
+   - The current image serves as a crucial tool for monitoring NGINX logs and maintaining operational observability.
+
+8. **Expected Security Risks**  
+   - The image might have vulnerabilities due to its non-CIA base.  
+   - Lack of updates in the upstream project could expose the container to potential exploits.  
+   - However, these risks will be mitigated by implementing compensating controls.
+
+9. **Risk Details**  
+   - The risk of running a non-CIA-compliant image includes potential security vulnerabilities and compliance issues.  
+   - An unseen issue during rebuilding could impact functionality and delay deployment timelines.
+
+10. **Select Exception Category**  
+    Security/Compliance Exception.
+
+Let me know if you need any modifications or additional details!
