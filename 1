@@ -1,40 +1,10 @@
-### Exception Request Details:
-
-1. **Summary**  
-   Request for an exception to use the `prometheus-nginxlog-exporter:v1.10.0` image, which is currently running on a non-CIA-based image. This exception is required to avoid risks and delays associated with migrating to a CIA-based Golang image due to unresolved upstream issues.
-
-2. **Component**  
-   Prometheus-nginxlog-exporter container.
-
-3. **Organization**  
-   Observability Engineering Team, Coupang.
-
-4. **Compensating Control**  
-   - Use a CIA-provided Golang base image and internally build the container by copying the binary.  
-   - Regularly monitor the upstream repository for updates.  
-   - Conduct periodic vulnerability scans on the existing image.
-
-5. **Expiry Date**  
-   Specify a reasonable timeframe, e.g., 6-12 months, to review the migration feasibility or until the upstream project receives an update.
-
-6. **Impacted Application**  
-   Metrics collection and monitoring using Prometheus via the nginxlog-exporter.
-
-7. **Business Justification**  
-   - The upstream project has not been updated in over a year, making migration to a CIA-based image infeasible at this time.  
-   - Rebuilding the image internally will introduce risks to core functionalities and require significant development time.  
-   - The current image serves as a crucial tool for monitoring NGINX logs and maintaining operational observability.
-
-8. **Expected Security Risks**  
-   - The image might have vulnerabilities due to its non-CIA base.  
-   - Lack of updates in the upstream project could expose the container to potential exploits.  
-   - However, these risks will be mitigated by implementing compensating controls.
-
-9. **Risk Details**  
-   - The risk of running a non-CIA-compliant image includes potential security vulnerabilities and compliance issues.  
-   - An unseen issue during rebuilding could impact functionality and delay deployment timelines.
-
-10. **Select Exception Category**  
-    Security/Compliance Exception.
-
-Let me know if you need any modifications or additional details!
+cat roles.txt | tr '\n' '|' | sed 's/|$//' | awk -v batch_size=10 -F'|' '{
+  for (i=1; i<=NF; i+=batch_size) {
+    query = "sum(count_over_time({role=~\"";
+    for (j=0; j<batch_size && (i+j)<=NF; j++) {
+      query = query $((i+j>1?"|":""))$(i+j);
+    }
+    query = query "\"} |~ \".*-redis7.*\" [1m]))";
+    print query;
+  }
+}'
