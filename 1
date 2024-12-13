@@ -1,8 +1,10 @@
-cat roles.txt | tr '\n' '|' | sed 's/|$//' | awk -v batch_size=10 -F'|' '{
+cat roles.txt | tr '\n' '|' | sed 's/|$//' | awk -v batch_size=10 -F'|' '
+{
   for (i=1; i<=NF; i+=batch_size) {
     query = "sum(count_over_time({role=~\"";
     for (j=0; j<batch_size && (i+j)<=NF; j++) {
-      query = query $((i+j>1?"|":""))$(i+j);
+      if (j > 0) query = query "|";
+      query = query $(i+j);
     }
     query = query "\"} |~ \".*-redis7.*\" [1m]))";
     print query;
