@@ -1,13 +1,30 @@
-cat roles.txt | tr '\n' '|' | sed 's/|$//' | awk -v batch_size=10 -F'|' '
-{
-  split($0, roles, "|");
-  for (i=1; i<=length(roles); i+=batch_size) {
-    query = "sum(count_over_time({role=~\"";
-    for (j=0; j<batch_size && (i+j)<=length(roles); j++) {
-      if (j > 0) query = query "|";
-      query = query roles[i+j];
-    }
-    query = query "\"} |~ \".*-redis7.*\" [1m]))";
-    print query;
-  }
-}'
+Here’s a simplified version written in easy English and formatted like a Slack message:
+
+---
+
+Hi [Recipient],
+
+I had a discussion with the SRE team and came up with a few questions. I need your help to confirm or clarify these points. Please let me know if I’m missing something or if anything needs to be added.
+
+1. **Node Exporter Migration**:  
+   - We are working on moving from `collectd` to `node-exporter`.  
+   - My understanding is that the migration is handled through AMI rotation, and we don’t need to run any playbooks or automation to roll out `node-exporter` on non-BoltX instances.  
+   Is this correct? Please let me know if I’m wrong.
+
+2. **Node Exporter Metrics**:  
+   - How are node-exporter metrics shared?  
+     - Are they sent to a central place where all users can access them?  
+     - Or are they mapped 1:1, meaning each tenant can only see their own metrics?  
+   Can you clarify how this is set up?
+
+3. **CPU Usage Metrics**:  
+   - Can we assume that `mimir-system-metrics` (or some other data source) will give us CPU counts for all roles and all tenants once AMI rotation is done?  
+   Is this correct, or do we need to handle it differently?
+
+Please share your thoughts or correct me if I’m wrong. Let me know if there’s anything else I should keep in mind.  
+
+Thanks!  
+
+---
+
+Let me know if this works or needs more changes!
