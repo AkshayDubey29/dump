@@ -1,30 +1,11 @@
-Here’s a simplified version written in easy English and formatted like a Slack message:
+Here’s a refined version of the selected message:
 
 ---
 
-Hi [Recipient],
+Regarding STEP-167 ([link](https://bts.coupang.net/browse/STEP-167)), it was noted that the ticket was rejected, and Srikanta will provide the required image. Once we receive the image, we will proceed with testing and verification to obtain the certified image through CIA. 
 
-I had a discussion with the SRE team and came up with a few questions. I need your help to confirm or clarify these points. Please let me know if I’m missing something or if anything needs to be added.
+In the meantime, I kindly request your support in helping us obtain the `prometheus-nginxlog-exporter` image as soon as possible. If you could also provide an ETA for the image, it would be greatly appreciated and very helpful.
 
-1. **Node Exporter Migration**:  
-   - We are working on moving from `collectd` to `node-exporter`.  
-   - My understanding is that the migration is handled through AMI rotation, and we don’t need to run any playbooks or automation to roll out `node-exporter` on non-BoltX instances.  
-   Is this correct? Please let me know if I’m wrong.
+--- 
 
-2. **Node Exporter Metrics**:  
-   - How are node-exporter metrics shared?  
-     - Are they sent to a central place where all users can access them?  
-     - Or are they mapped 1:1, meaning each tenant can only see their own metrics?  
-   Can you clarify how this is set up?
-
-3. **CPU Usage Metrics**:  
-   - Can we assume that `mimir-system-metrics` (or some other data source) will give us CPU counts for all roles and all tenants once AMI rotation is done?  
-   Is this correct, or do we need to handle it differently?
-
-Please share your thoughts or correct me if I’m wrong. Let me know if there’s anything else I should keep in mind.  
-
-Thanks!  
-
----
-
-Let me know if this works or needs more changes!
+Let me know if this works!
